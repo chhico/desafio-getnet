@@ -28,6 +28,7 @@ def consultar_base_getnet(query: str, num_resultados: int = 4) -> str:
         query: Pergunta ou termos de busca sobre a Getnet
         num_resultados: Quantidade de trechos a recuperar (padrão: 4)
     """
+    import os
     try:
         vs = _get_vectorstore()
         docs = vs.similarity_search(query, k=num_resultados)
@@ -36,8 +37,18 @@ def consultar_base_getnet(query: str, num_resultados: int = 4) -> str:
 
         trechos = []
         for i, doc in enumerate(docs, 1):
-            source = doc.metadata.get("source", "Base Oficial Getnet")
-            trechos.append(f"📄 Fonte [{source}] - Trecho {i}:\n{doc.page_content}")
+            raw_source = doc.metadata.get("source", "Base Oficial Getnet")
+            if raw_source.startswith("http://") or raw_source.startswith("https://"):
+                title = doc.metadata.get("title")
+                title_suffix = f" ({title})" if title else ""
+                source_label = f"🌐 URL: {raw_source}{title_suffix}"
+            elif raw_source != "Base Oficial Getnet":
+                filename = os.path.basename(raw_source)
+                source_label = f"📄 Arquivo: {filename}"
+            else:
+                source_label = "📄 Arquivo: Base Oficial Getnet"
+
+            trechos.append(f"Fonte [{source_label}] - Trecho {i}:\n{doc.page_content}")
 
         return "\n\n".join(trechos)
     except Exception as e:
@@ -61,7 +72,7 @@ def pesquisar_web(query: str, max_resultados: int = 4) -> str:
         results = []
         with DDGS() as ddgs:
             for r in ddgs.text(query, max_results=max_resultados):
-                results.append(f"🔗 {r['title']}\n   {r['href']}\n   {r['body']}")
+                results.append(f"🌐 URL: {r['href']}\n   Título: {r['title']}\n   Conteúdo: {r['body']}")
         
         if not results:
             return f"Nenhum resultado recente encontrado na web para '{query}'."

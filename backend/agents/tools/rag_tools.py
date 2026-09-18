@@ -28,25 +28,33 @@ from backend.core.config import settings
 _vectorstore = None
 
 
-def _sync_simple(docs, vectorstore):
+def _sync_simple(docs, vectorstore, force: bool = False) -> int:
     """Sincronização manual via Hashes no SQLite."""
     import sqlite3
     import hashlib
     import os
+    from collections import defaultdict
     from langchain_text_splitters import RecursiveCharacterTextSplitter
     
+    if not docs:
+        print("[Modo Simple] Nenhum documento encontrado para indexação.")
+        return 0
+
     os.makedirs("bds", exist_ok=True)
     conn = sqlite3.connect("bds/rag_sync.sqlite")
     cursor = conn.cursor()
     cursor.execute("CREATE TABLE IF NOT EXISTS simple_sync_hashes (filename TEXT PRIMARY KEY, hash TEXT)")
     
-    new_or_updated_docs = []
-    
+    # Agrupa docs por arquivo fonte físico
+    docs_by_file = defaultdict(list)
     for doc in docs:
         filename = doc.metadata.get("source", "unknown")
-        if filename == "unknown" or not os.path.exists(filename):
-            continue
-            
+        if filename != "unknown" and os.path.exists(filename):
+            docs_by_file[filename].append(doc)
+
+    files_to_index = []
+    
+    for filename, file_docs in docs_by_file.items():
         hasher = hashlib.md5()
         with open(filename, 'rb') as f:
             hasher.update(f.read())
@@ -55,27 +63,35 @@ def _sync_simple(docs, vectorstore):
         cursor.execute("SELECT hash FROM simple_sync_hashes WHERE filename = ?", (filename,))
         row = cursor.fetchone()
         
-        if row is None or row[0] != file_hash:
-            print(f"[Debug] Indexando {filename} | DB Hash: {row[0] if row else 'None'} | Computado: {file_hash}")
-            if row is not None:
+        # Se force=True, ou se o arquivo é novo (row is None), ou se o hash mudou:
+        if force or row is None or row[0] != file_hash:
+            status = "Sobrescrevendo (force=True)" if force else ("Novo" if row is None else "Modificado")
+            print(f"[Debug] Indexando [{status}] {filename} | DB Hash: {row[0] if row else 'None'} | Computado: {file_hash}")
+            
+            # Se for force=True ou se já existia, remove chunks antigos deste arquivo do vectorstore
+            if row is not None or force:
                 try:
                     vectorstore.delete(where={"source": filename})
                 except Exception:
                     pass
-            new_or_updated_docs.append(doc)
+            files_to_index.extend(file_docs)
             cursor.execute("INSERT OR REPLACE INTO simple_sync_hashes (filename, hash) VALUES (?, ?)", (filename, file_hash))
             
     conn.commit()
     conn.close()
     
-    if new_or_updated_docs:
-        print(f"[Modo Simple] Indexando {len(new_or_updated_docs)} arquivo(s) novo(s) ou modificado(s)...")
+    updated_files_count = len(set(d.metadata.get("source") for d in files_to_index))
+    
+    if files_to_index:
+        print(f"[Modo Simple] Indexando {updated_files_count} arquivo(s) ({len(files_to_index)} seções/páginas)...")
         splitter = RecursiveCharacterTextSplitter(chunk_size=600, chunk_overlap=80)
-        chunks = splitter.split_documents(new_or_updated_docs)
+        chunks = splitter.split_documents(files_to_index)
         if chunks:
             vectorstore.add_documents(chunks)
+        return updated_files_count
     else:
-        print("[Modo Simple] Nenhum arquivo local alterado. Pulando processamento do ChromaDB.")
+        print("[Modo Simple] Nenhum arquivo local precisou ser indexado (já atualizado).")
+        return 0
 
 
 def _sync_api(docs, vectorstore):
@@ -87,49 +103,50 @@ def _sync_api(docs, vectorstore):
     return
 
 
+def load_local_documents(data_dir: str = "fonte_de_dados"):
+    """Carrega documentos físicos da pasta (.txt, .pdf, .docx)."""
+    import os
+    from langchain_community.document_loaders import DirectoryLoader, TextLoader, PyPDFLoader, Docx2txtLoader
+    
+    if not os.path.exists(data_dir):
+        os.makedirs(data_dir, exist_ok=True)
+        
+    docs_txt = []
+    docs_pdf = []
+    docs_docx = []
+    
+    # Loader para .TXT (com fallback Latin-1)
+    try:
+        txt_loader = DirectoryLoader(data_dir, glob="**/*.txt", loader_cls=TextLoader, loader_kwargs={"encoding": "utf-8"}, show_progress=False)
+        docs_txt.extend(txt_loader.load())
+    except Exception:
+        txt_loader = DirectoryLoader(data_dir, glob="**/*.txt", loader_cls=TextLoader, loader_kwargs={"encoding": "latin-1"}, show_progress=False)
+        docs_txt.extend(txt_loader.load())
+    
+    # Loader para .PDF
+    pdf_loader = DirectoryLoader(data_dir, glob="**/*.pdf", loader_cls=PyPDFLoader, show_progress=False)
+    docs_pdf.extend(pdf_loader.load())
+    
+    # Loader para .DOCX
+    docx_loader = DirectoryLoader(data_dir, glob="**/*.docx", loader_cls=Docx2txtLoader, show_progress=False)
+    docs_docx.extend(docx_loader.load())
+
+    return docs_txt + docs_pdf + docs_docx
+
+
+def sync_local_files_to_vectorstore(vectorstore, force: bool = False, data_dir: str = "fonte_de_dados") -> int:
+    """Sincroniza os arquivos locais de data_dir no vectorstore com detecção de hash ou sobrescrita forçada."""
+    docs = load_local_documents(data_dir=data_dir)
+    return _sync_simple(docs, vectorstore, force=force)
+
+
 def _get_vectorstore():
     """Inicializa o vectorstore carregando os arquivos físicos."""
     global _vectorstore
     if _vectorstore is None:
         embeddings = OpenAIEmbeddings(api_key=settings.OPENAI_API_KEY)
         
-        # 1. Carregar documentos físicos da pasta
-        import os
-        from langchain_community.document_loaders import DirectoryLoader, TextLoader, PyPDFLoader, Docx2txtLoader
-        
-        data_dir = "fonte_de_dados"
-        if not os.path.exists(data_dir):
-            os.makedirs(data_dir, exist_ok=True)
-            
-        docs = []
-        docs_txt = []
-        docs_pdf = []
-        docs_docx = []
-        
-        # Loader para .TXT (Configurado com UTF-8 explícito)
-        try:
-            txt_loader = DirectoryLoader(data_dir, glob="**/*.txt", loader_cls=TextLoader, loader_kwargs={"encoding": "utf-8"}, show_progress=False)
-            docs_txt.extend(txt_loader.load())
-        except Exception:
-            # Fallback para Latin-1 se falhar UTF-8 (Comum em arquivos Windows antigos)
-            txt_loader = DirectoryLoader(data_dir, glob="**/*.txt", loader_cls=TextLoader, loader_kwargs={"encoding": "latin-1"}, show_progress=False)
-            docs_txt.extend(txt_loader.load())
-        
-        # Loader para .PDF
-        pdf_loader = DirectoryLoader(data_dir, glob="**/*.pdf", loader_cls=PyPDFLoader, show_progress=False)
-        docs_pdf.extend(pdf_loader.load())
-        
-        # Loader para .DOCX
-        docx_loader = DirectoryLoader(data_dir, glob="**/*.docx", loader_cls=Docx2txtLoader, show_progress=False)
-        docs_docx.extend(docx_loader.load())
-
-        docs = docs_txt + docs_pdf + docs_docx
-        
-        if not docs:
-            from langchain_core.documents import Document
-            docs = [Document(page_content="Base de conhecimento vazia.", metadata={"source": "dummy.txt"})]
-        
-        # 2. Roteamento do Vector DB e Sincronização
+        # Roteamento do Vector DB e Sincronização
         if settings.VECTOR_DB == "chroma":
             from langchain_chroma import Chroma
             persist_dir = settings.CHROMA_PERSIST_DIR
@@ -142,12 +159,17 @@ def _get_vectorstore():
             # Sincronizar o conteúdo usando as técnicas controladas por variável
             sync_mode = getattr(settings, "RAG_SYNC_MODE", "simple")
             if sync_mode == "simple":
-                _sync_simple(docs, _vectorstore)
+                sync_local_files_to_vectorstore(_vectorstore, force=False)
             elif sync_mode == "api":
+                docs = load_local_documents()
                 _sync_api(docs, _vectorstore)
                 
         else:
-            # Fallback padrão FAISS (In-Memory). Sempre re-cria a base porque SQLite hashes não importam para uma memória volátil que acabou de zerar.
+            # Fallback padrão FAISS (In-Memory)
+            docs = load_local_documents()
+            if not docs:
+                from langchain_core.documents import Document
+                docs = [Document(page_content="Base de conhecimento vazia.", metadata={"source": "dummy.txt"})]
             print("[FAISS] Modo In-Memory detectado. Vetorizando arquivos do zero...")
             from langchain_text_splitters import RecursiveCharacterTextSplitter
             splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
@@ -179,8 +201,16 @@ def buscar_documentos(query: str, num_resultados: int = 3) -> str:
             return "Nenhum documento relevante encontrado para esta consulta."
 
         resultados = []
+        import os
         for i, doc in enumerate(docs, 1):
-            resultados.append(f"📄 Trecho {i}:\n{doc.page_content}")
+            raw_source = doc.metadata.get("source", "Base de Conhecimento")
+            if raw_source.startswith("http://") or raw_source.startswith("https://"):
+                source_label = f"🌐 URL: {raw_source}"
+            elif raw_source != "Base de Conhecimento":
+                source_label = f"📄 Arquivo: {os.path.basename(raw_source)}"
+            else:
+                source_label = "📄 Arquivo: Base de Conhecimento"
+            resultados.append(f"Fonte [{source_label}] - Trecho {i}:\n{doc.page_content}")
 
         return "\n\n".join(resultados)
     except Exception as e:
