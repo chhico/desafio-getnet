@@ -1,0 +1,14 @@
+.git
+.gitignore
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.env
+.vscode
+.langgraph_api
+*.log
+test_results.txt
+final_test_report.txt
+frontend/

@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: getnet-multiagent-api
+    ports:
+      - "8001:8001"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - AGENT_MODEL=${AGENT_MODEL:-gpt-4o}
+      - VECTOR_DB=chroma
+      - CHROMA_PERSIST_DIR=/app/bds/chroma_db
+      - RAG_SYNC_URLS=${RAG_SYNC_URLS:-https://www.getnet.net/, https://www.getnet.net/en}
+      - RAG_CRAWLER_MAX_DEPTH=${RAG_CRAWLER_MAX_DEPTH:-2}
+      - RAG_WEB_SYNC_CRON=${RAG_WEB_SYNC_CRON:-0 3 * * *}
+    volumes:
+      - ./bds:/app/bds
+      - ./fonte_de_dados:/app/fonte_de_dados
+    restart: unless-stopped

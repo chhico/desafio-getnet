@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customer Support Agent V2</title>
+
+    <!-- Meta e CSS -->
+    <link rel="stylesheet" href="css/design_system.css">
+
+    <!-- Scripts React (CDN) -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Componentes e Lógica via Babel -->
+    <script type="text/babel" src="js/apiFetch.js"></script>
+    <script type="text/babel" src="js/components/Dashboard.js"></script>
+</head>
+
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { StrictMode } = React;
+        const { createRoot } = ReactDOM;
+
+        // App Controller Principal
+        const App = () => {
+            return (
+                <main className="app-container">
+                    <Dashboard />
+                </main>
+            );
+        };
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(
+            <StrictMode>
+                <App />
+            </StrictMode>
+        );
+    </script>
+</body>
+
+</html>

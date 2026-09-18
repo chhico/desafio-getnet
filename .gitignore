@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+ENV/
+
+# Environment Variables
+.env
+.env.local
+
+# Logs
+*.log
+langgraph_dev.log
+langgraph_final*.log
+langgraph_no_db.log
+test_results.txt
+final_test_report.txt
+
+# Database (residues)
+bds/
+*.sqlite
+*.sqlite3
+
+# IDEs
+.vscode/
+.idea/
+.DS_Store
+
+# LangGraph
+.langgraph_api/
+.langgraph_cli/
+
+# Build and distribution
+dist/
+build/
+*.egg-info/

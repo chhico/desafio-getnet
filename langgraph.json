@@ -1,0 +1,7 @@
+{
+  "dependencies": ["."],
+  "graphs": {
+    "agent": "backend/agents/graph.py:support_graph_studio"
+  },
+  "env": ".env"
+}
