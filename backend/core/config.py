@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     CHECKPOINT_DB_PATH: str = Field("bds/checkpoints.sqlite", env="CHECKPOINT_DB_PATH")
     CONFIG_DB_PATH: str = Field("bds/config.db", env="CONFIG_DB_PATH")
     RAG_SYNC_MODE: str = Field("simple", env="RAG_SYNC_MODE")
-    RAG_SYNC_URLS: str = Field("https://www.getnet.net/pt", env="RAG_SYNC_URLS")
+    RAG_SYNC_URLS: str = Field("https://www.getnet.eu/pt/suporte", env="RAG_SYNC_URLS")
     RAG_CRAWLER_MAX_DEPTH: int = Field(2, env="RAG_CRAWLER_MAX_DEPTH")
     RAG_WEB_SYNC_CRON: str = Field("0 3 * * *", env="RAG_WEB_SYNC_CRON")
 
