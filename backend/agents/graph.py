@@ -16,23 +16,26 @@ from backend.agents.guardrails import guardrail_node, route_after_guardrail
 from backend.agents.orchestrator import orchestrator_node, route_after_orchestrator
 from backend.agents.knowledge_agent import knowledge_node
 from backend.agents.support_agent import support_node
+from backend.agents.escalation_agent import escalation_node
 
 
 def build_graph(use_checkpointer: bool = True) -> StateGraph:
     """
-    Constrói e compila o grafo multiagente com camada de Guardrails de entrada.
+    Constrói e compila o grafo multiagente com camada de Guardrails de entrada
+    e 4 Agentes Especialistas (Router, Knowledge, Support, Escalation/Human Handoff).
     Fluxo:
       START -> guardrail:
-        - seguro   -> orchestrator -> [knowledge | support | guardrail_block] -> END
+        - seguro   -> orchestrator -> [knowledge | support | escalation | guardrail_block] -> END
         - bloqueio -> END
     """
     builder = StateGraph(SupportState)
 
-    # 1. Registro dos Nós (Guardrail + 3 Agentes)
+    # 1. Registro dos Nós (Guardrail + 4 Agentes)
     builder.add_node("guardrail",    guardrail_node)
     builder.add_node("orchestrator", orchestrator_node)
     builder.add_node("knowledge",    knowledge_node)
     builder.add_node("support",      support_node)
+    builder.add_node("escalation",   escalation_node)
 
     # 2. Ponto de Entrada: Toda mensagem passa primeiro pelo Guardrail de Segurança
     builder.add_edge(START, "guardrail")
@@ -55,12 +58,14 @@ def build_graph(use_checkpointer: bool = True) -> StateGraph:
             "knowledge": "knowledge",
             "support":   "support",
             "guardrail_block": END,
+            "escalation": "escalation",
         },
     )
 
     # 5. Finalização
-    builder.add_edge("knowledge", END)
-    builder.add_edge("support",   END)
+    builder.add_edge("knowledge",  END)
+    builder.add_edge("support",    END)
+    builder.add_edge("escalation", END)
 
     # 6. Checkpointer de Memória
     checkpointer = MemorySaver() if use_checkpointer else None

@@ -8,8 +8,8 @@ from typing import Annotated, Literal, Optional
 from typing_extensions import TypedDict
 from langgraph.graph.message import add_messages
 
-# Tipos de agentes especialistas suportados
-AgentType = Literal["knowledge", "support", "guardrail_block"]
+# Tipos de agentes especialistas suportados (4 Agentes + Guardrail)
+AgentType = Literal["knowledge", "support", "guardrail_block", "escalation"]
 
 
 class SupportState(TypedDict):
@@ -40,3 +40,9 @@ class SupportState(TypedDict):
     # Guardrails de Segurança e Integridade
     is_safe: bool | None
     guardrail_reason: str | None
+
+    # Human Handoff / Agente de Escalonamento
+    human_handoff_requested: bool | None
+    ticket_protocol: str | None
+    summary_for_human: str | None
+    queue_target: str | None
