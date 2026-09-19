@@ -36,4 +36,30 @@ class ConversationService:
         agent_used = result.get("next_agent", "unknown")
         category = result.get("category", "Geral")
 
-        return ChatResponse(response=ai_msg, agent_used=agent_used, category=category)
+        # Extrai ferramentas utilizadas exclusivamente no turno atual
+        last_human_idx = -1
+        for i, m in enumerate(all_msgs):
+            if isinstance(m, HumanMessage) or getattr(m, "type", "") == "human":
+                last_human_idx = i
+
+        turn_msgs = all_msgs[last_human_idx:] if last_human_idx != -1 else all_msgs
+        tools_used = []
+        for m in turn_msgs:
+            if hasattr(m, "tool_calls") and m.tool_calls:
+                for tc in m.tool_calls:
+                    t_name = tc.get("name") if isinstance(tc, dict) else getattr(tc, "name", None)
+                    if t_name and t_name not in tools_used:
+                        tools_used.append(t_name)
+            if getattr(m, "type", "") == "tool" and hasattr(m, "name") and m.name:
+                if m.name not in tools_used:
+                    tools_used.append(m.name)
+
+        if not tools_used and result.get("tools_used"):
+            tools_used = result.get("tools_used")
+
+        return ChatResponse(
+            response=ai_msg,
+            agent_used=agent_used,
+            category=category,
+            tools_used=tools_used,
+        )

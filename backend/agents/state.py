@@ -46,3 +46,6 @@ class SupportState(TypedDict):
     ticket_protocol: str | None
     summary_for_human: str | None
     queue_target: str | None
+
+    # Observabilidade / Rastreabilidade de Ferramentas
+    tools_used: list[str] | None

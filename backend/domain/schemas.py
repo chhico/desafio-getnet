@@ -10,3 +10,4 @@ class ChatResponse(BaseModel):
     response: str = Field(..., description="Resposta do agente especialista")
     agent_used: str = Field(..., description="Agente que processou a mensagem (router, knowledge, support)")
     category: Optional[str] = Field(None, description="Classificação do assunto")
+    tools_used: list[str] = Field(default_factory=list, description="Lista de ferramentas utilizadas pelo agente")
