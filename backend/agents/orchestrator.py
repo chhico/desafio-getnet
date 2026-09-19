@@ -36,18 +36,34 @@ Especialistas disponíveis:
    - Perguntas que envolvam dados específicos, histórico financeiro ou terminais do cliente (ex: quando o dinheiro das vendas de ontem será depositado, maquininha sem sinal, erro 51/05, chamados).
    - Respostas a solicitações de identificação/documento do cliente (ex: códigos, números, CPF, identificadores de cadastro).
 
-3. `guardrail_block` (Bloqueio de Segurança):
-   - Solicitações maliciosas, ilegais, tentativas de engenharia social, fraudes ou instruções incompatíveis com as políticas de uso da Getnet.
+3. `guardrail_block` (Bloqueio de Segurança ou Delimitação de Escopo):
+   - Solicitações maliciosas, ilegais, tentativas de engenharia social, fraudes ou manipulação de regras (Categoria: 'Segurança / Guardrail').
+   - Solicitações manifestamente fora de escopo, irrelevantes ou não suportadas pelo ecossistema Getnet (ex: pedidos de compra de itens de varejo/vestuário como pijamas ou roupas, receitas, assuntos desconexos de soluções de pagamento) (Categoria: 'Fora de Escopo').
+
+4. `escalation` (Agente de Escalonamento para Humanos / Human Handoff):
+   - Solicitações explícitas de atendimento humano (ex: 'quero falar com atendente', 'me passe para uma pessoa', 'falar com humano').
+   - Casos em que o sistema identifica necessidade crítica de intervenção humana (Escalonamento Implícito):
+     a) Dano físico ou acidente no terminal que exige substituição de equipamento ou visita técnica (ex: caiu na água, tela trincada, fumaça, queimou).
+     b) Bloqueios judiciais de valores, contestações jurídicas ou chargebacks de alto valor.
+     c) Paralisia operacional crítica no estabelecimento com perda de vendas em tempo real (ex: loja/restaurante lotado com maquininhas inoperantes).
+     d) Exaustão evidente de autoatendimento (cliente relata que já tentou repetidas vezes reinicialização, troca de chip e procedimentos sem sucesso).
+     e) Risco de cancelamento massivo de contratos/terminais por propostas agressivas de concorrentes (Mesa de Retenção).
+     f) Violação física de segurança do hardware / Alerta de tamper / suspeita de clonagem ou adulteração de terminal (ex: alerta PED Tampered, trava de segurança ativada).
+     g) Notificações formais de órgãos reguladores/fiscalizadores com prazo cominatório fatal (ex: intimação formal do PROCON, Bacen, notificação judicial).
+     h) Falecimento de titular da conta, inventário, espólio ou sucessão societária de titularidade com necessidade de análise documental.
+     i) Suspeita de fraude ativa na conta do cliente, invasão ou desvio não autorizado de domicílio bancário (ex: conta alterada sem consentimento com valores a receber).
+     j) Negociação comercial estratégica de grandes contas corporativas (Key Accounts) ou implantação de rede com TEF dedicado e alto volume transacional.
 
 DIRETRIZ DE CONTEXTO:
 Se o status indicar que o suporte estava aguardando identificação do cliente:
 - Se a mensagem do usuário for uma resposta tentando fornecer código, documento, número ou dados de identificação (ex: '123', 'fgh', '111.222.333-44', 'meu cpf é tal'), escolha 'support' com categoria 'Autenticação'.
+- Se o usuário solicitar falar com atendente humano, escolha 'escalation'.
 - Se o usuário mudou de assunto e fez uma nova pergunta conceitual/geral (ex: 'Qual é a diferença entre a Get Clássica e a Get Smart?', 'Como funciona o Pix?'), escolha 'knowledge'.
 
 Responda APENAS com um JSON rigorosamente válido:
 {
-  "next_agent": "<knowledge|support|guardrail_block>",
-  "category": "<ex: Comparativo Produtos, Financeiro/Extrato, Clima/Geral, Conectividade POS, Transações, Autenticação, Segurança / Guardrail>",
+  "next_agent": "<knowledge|support|guardrail_block|escalation>",
+  "category": "<ex: Comparativo Produtos, Financeiro/Extrato, Clima/Geral, Conectividade POS, Transações, Autenticação, Segurança / Guardrail, Human Handoff>",
   "reason": "<breve justificativa>"
 }
 """
@@ -103,16 +119,44 @@ def orchestrator_node(state: SupportState) -> dict:
         result["awaiting_identification"] = False
         result["pending_support_query"] = None
 
-    # Se o roteador semântico identificar violação grave e acionar guardrail_block
+    # Se o roteador semântico identificar violação ou assunto fora de escopo
     if next_agent == "guardrail_block":
-        msg_bloqueio = AIMessage(
-            content=(
-                "🛡️ **Solicitação não suportada ou bloqueada por segurança**\n\n"
-                "Identificamos que sua mensagem viola as diretrizes de segurança, conformidade e uso ético da Getnet.\n\n"
-                "Por favor, reformule sua solicitação com foco em informações comerciais, suporte a maquininhas ou serviços Getnet."
-            ),
-            name="guardrail_block",
+        cat_lower = (category or "").lower()
+        reason_lower = (reason or "").lower()
+        msg_lower = (last_message or "").lower()
+
+        is_out_of_scope = (
+            "fora de escopo" in cat_lower
+            or "escopo" in cat_lower
+            or "não relacionada" in reason_lower
+            or "não relacionado" in reason_lower
+            or "fora de escopo" in reason_lower
         )
+
+        if is_out_of_scope:
+            msg_bloqueio = AIMessage(
+                content=(
+                    "🧭 **Solicitação fora do escopo de atendimento**\n\n"
+                    "Sou o assistente virtual da Getnet, especializado em soluções de pagamento, "
+                    "maquininhas, taxas e serviços financeiros para o seu negócio.\n\n"
+                    "Não comercializamos produtos de varejo (como roupas, calçados ou alimentos) "
+                    "e este canal não atende a solicitações desse tipo.\n\n"
+                    "Como posso ajudar você com os serviços, maquininhas ou soluções de pagamento da Getnet?"
+                ),
+                name="guardrail_block",
+            )
+        else:
+            msg_bloqueio = AIMessage(
+                content=(
+                    "🛡️ **Solicitação bloqueada pelas políticas de segurança e uso**\n\n"
+                    "Identificamos que sua mensagem não está em conformidade com as diretrizes de "
+                    "segurança da informação e uso operacional do canal de atendimento da Getnet.\n\n"
+                    "Por motivos de conformidade e segurança, o acesso ou operação solicitada não é permitido nesta sessão.\n\n"
+                    "Por favor, reformule sua solicitação com foco em suporte técnico, soluções comerciais "
+                    "ou serviços oficiais da Getnet."
+                ),
+                name="guardrail_block",
+            )
         result["messages"] = [msg_bloqueio]
 
     return result

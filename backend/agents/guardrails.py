@@ -21,12 +21,12 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _PROMPT_INJECTION_PATTERNS = [
-    r"ignore\s+(all\s+|suas\s+|todas\s+as\s+)?(previous\s+|anteriores\s+)?instructions",
-    r"ignore\s+(suas\s+|as\s+)?(regras|diretrizes|instruções)",
-    r"esque[çc]a\s+(todas\s+as\s+|suas\s+)?(regras|instruções|diretrizes)",
-    r"desconsidere\s+(suas\s+|as\s+)?(regras|instruções|diretrizes)",
-    r"revele\s+(o\s+|seu\s+)?(prompt|system\s+prompt|instruções\s+iniciais)",
-    r"mostre\s+(o\s+|seu\s+)?(prompt|system\s+prompt|instruções\s+de\s+sistema)",
+    r"ignore\s+(todas\s+as\s+|all\s+|suas\s+|as\s+)?(anteriores\s+|previous\s+)?(instru[çc][õo]es|instructions|regras|diretrizes)",
+    r"ignore\s+(todas\s+as\s+|suas\s+|as\s+)?(regras|diretrizes|instru[çc][õo]es)",
+    r"esque[çc]a\s+(todas\s+as\s+|suas\s+)?(regras|instru[çc][õo]es|diretrizes)",
+    r"desconsidere\s+(todas\s+as\s+|suas\s+|as\s+)?(regras|instru[çc][õo]es|diretrizes)",
+    r"revele\s+(o\s+|seu\s+|o\s+seu\s+)?(prompt|system\s+prompt|instru[çc][õo]es\s+iniciais)",
+    r"mostre\s+(o\s+|seu\s+|o\s+seu\s+)?(prompt|system\s+prompt|instru[çc][õo]es\s+de\s+sistema)",
     r"(what\s+is|show\s+me)\s+(your\s+)?(system\s+prompt|initial\s+prompt)",
     r"act\s+as\s+(dan|unrestricted|jailbreak|root)",
     r"finja\s+que\s+voc[êe]\s+[ée]\s+(um\s+hacker|o\s+presidente|desprovido\s+de\s+regras)",
@@ -111,12 +111,12 @@ def guardrail_node(state: SupportState) -> dict:
         
         msg_bloqueio = AIMessage(
             content=(
-                "🛡️ **Solicitação não suportada ou bloqueada por segurança**\n\n"
-                "Identificamos que sua mensagem contém termos, instruções ou tentativas de comando "
-                "incompatíveis com as políticas de segurança, privacidade e uso ético da Getnet.\n\n"
-                "Por motivos de conformidade e segurança da informação, esta solicitação não pôde ser atendida.\n\n"
-                "Por favor, reformule sua pergunta com foco em informações comerciais, suporte a maquininhas, "
-                "taxas ou serviços oficiais da Getnet."
+                "🛡️ **Solicitação bloqueada por segurança**\n\n"
+                "Identificamos comandos, termos ou instruções incompatíveis com os protocolos "
+                "de segurança da informação, privacidade e integridade da Getnet.\n\n"
+                "Por motivos de proteção do canal, esta solicitação não pôde ser processada.\n\n"
+                "Por favor, reformule sua mensagem com foco em dúvidas comerciais, suporte a maquininhas, "
+                "taxas ou serviços oficiais Getnet."
             ),
             name="guardrail_block",
         )
