@@ -11,10 +11,11 @@ Responsável por orquestrar a transferência assistida de chamados para operador
 
 import random
 import logging
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 
 from backend.agents.state import SupportState
+from backend.agents.tools.escalation_tools import abrir_chamado_servicenow, ESCALATION_TOOLS
 from backend.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -83,7 +84,31 @@ def escalation_node(state: SupportState) -> dict:
 
     logger.info(f"🤝 Human Handoff acionado! Protocolo: {protocol} | Fila: {queue_target}")
 
-    # 4. Mensagem amigável e segura para o cliente
+    # 4. Invocação mandatória da ferramenta abrir_chamado_servicenow
+    tool_args = {
+        "user_id": authenticated_user or user_id,
+        "motivo": summary_text,
+        "protocolo": protocol,
+        "fila": queue_target,
+    }
+    abrir_chamado_servicenow.invoke(tool_args)
+
+    call_id = f"call_sn_{random.randint(1000, 9999)}"
+    ai_tool_call = AIMessage(
+        content="",
+        tool_calls=[{
+            "name": "abrir_chamado_servicenow",
+            "args": tool_args,
+            "id": call_id,
+        }],
+    )
+    tool_msg = ToolMessage(
+        content="None",
+        name="abrir_chamado_servicenow",
+        tool_call_id=call_id,
+    )
+
+    # 5. Mensagem amigável e segura para o cliente
     msg_cliente = AIMessage(
         content=(
             f"🤝 **Transferência para Atendimento Humano Realizada**\n\n"
@@ -99,7 +124,7 @@ def escalation_node(state: SupportState) -> dict:
     )
 
     return {
-        "messages": [msg_cliente],
+        "messages": [ai_tool_call, tool_msg, msg_cliente],
         "next_agent": "escalation",
         "category": "Human Handoff / Escalonamento",
         "routing_reason": "Transferência assistida para operador humano com consolidação de contexto",
@@ -107,4 +132,5 @@ def escalation_node(state: SupportState) -> dict:
         "ticket_protocol": protocol,
         "summary_for_human": summary_text,
         "queue_target": queue_target,
+        "tools_used": ["abrir_chamado_servicenow"],
     }
