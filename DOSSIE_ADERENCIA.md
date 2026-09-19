@@ -73,11 +73,13 @@ A solução adota o **LangGraph** como motor de orquestração com máquina de e
                      │ │ Agente 2: CONHECIMENTO  │     │ Agente 3: SUPORTE       │
                      │ │    (knowledge_node)     │     │     (support_node)      │
                      │ ├─────────────────────────┤     ├─────────────────────────┤
-                     │ │ • consultar_base_getnet │     │ • consultar_vendas_liq  │
+                     │ │ • consultar_base_local  │     │ • consultar_vendas_liq  │
                      │ │   (RAG ChromaDB: PDFs + │     │ • consultar_maquininhas │
-                     │ │    páginas crawleadas)  │     │ • consultar_transacoes  │
-                     │ │ • pesquisar_web (DDGS)  │     │ • abrir_chamado_suporte │
-                     │ │ • Citação de Fontes     │     │ • Auth & Isolamento ID  │
+                     │ │    URLs assíncronas)    │     │ • consultar_transacoes  │
+                     │ │ • consultar_base_web    │     │ • abrir_chamado_suporte │
+                     │ │   (Varredura ao vivo)   │     │ • Auth & Isolamento ID  │
+                     │ │ • pesquisar_web (DDGS)  │     │                         │
+                     │ │ • Citação de Fontes     │     │                         │
                      │ └────────────┬────────────┘     └────────────┬────────────┘
                      │              │                               │
                      │              └───────────────┬───────────────┘
@@ -104,8 +106,9 @@ A solução adota o **LangGraph** como motor de orquestração com máquina de e
 - **Arquivo:** [`backend/agents/knowledge_agent.py`](backend/agents/knowledge_agent.py)
 - **Papel:** Especialista técnico e institucional Getnet, munido de RAG corporativo e acesso à internet.
 - **Ferramentas (`KNOWLEDGE_TOOLS`):**
-  1. `consultar_base_getnet`: Realiza busca por similaridade vetorial (`k=4`) no ChromaDB, consultando tanto arquivos físicos locais (`fonte_de_dados/*.pdf`) quanto URLs oficiais crawleadas da Getnet.
-  2. `pesquisar_web`: Busca informações dinâmicas em tempo real na internet (clima, cotação de moedas, mercado financeiro) via DuckDuckGo Search sem custo de API externa.
+  1. `consultar_base_local_getnet`: Realiza busca por similaridade vetorial (`k=4`) no ChromaDB, consultando arquivos físicos locais (`fonte_de_dados/*.pdf`) e URLs indexadas assincronamente via crawler (`RAG_ASYNC_URLS`).
+  2. `consultar_base_web_getnet`: Varredura em tempo real nas páginas e subpáginas dos portais oficiais Getnet (`RAG_SYNC_URLS`) sob demanda (*fallback* de alta fidelidade).
+  3. `pesquisar_web`: Busca informações dinâmicas em tempo real na internet (clima, cotação de moedas, mercado financeiro) via DuckDuckGo Search sem custo de API externa.
 - **Citação de Fontes:** As ferramentas rotulam as origens com ícones e discriminam se os dados vieram de `📄 Arquivo: <nome>` ou `🌐 URL: <link>`. O `SYSTEM_PROMPT` obriga o agente a anexar uma seção destacada `📌 Fontes consultadas:` no rodapé de toda resposta.
 
 ### 2.4. Agente 3 — Agente de Suporte ao Cliente (`Customer Support Agent`)
@@ -117,6 +120,12 @@ A solução adota o **LangGraph** como motor de orquestração com máquina de e
   2. `consultar_status_maquininhas`: Verifica a conectividade dos terminais do cliente (Wi-Fi, 4G, chips sem sinal) e diagnósticos técnicos.
   3. `consultar_transacoes_e_erros`: Analisa transações recentes e identifica causas técnicas de recusa (ex: Erro 51 - Saldo Insuficiente, Erro 05).
   4. `abrir_chamado_suporte`: Gera chamados técnicos formais com número de protocolo (ex: `GET-1001`) e prazo de atendimento para solicitações que demandam intervenção humana (*Human Handoff*).
+
+### 2.5. Agente 4 — Agente de Escalonamento Humano (`Human Escalation Agent`)
+- **Arquivo:** [`backend/agents/escalation_agent.py`](backend/agents/escalation_agent.py)
+- **Papel:** Conduz a transferência assistida e contextualizada para operadores humanos (Human Handoff), gerando protocolos auditáveis e sintetizando o caso para o atendente.
+- **Ferramentas (`ESCALATION_TOOLS`):**
+  1. `abrir_chamado_servicenow`: Invocada obrigatoriamente a cada escalonamento para registrar o chamado/incidente no ServiceNow com protocolo e sumarização do caso.
 
 ---
 
@@ -239,16 +248,16 @@ A suíte automatizada em [`tests/test_scenarios.py`](tests/test_scenarios.py) at
 
 | # | Cenário de Teste | Agente Responsável | Ferramenta / Validação | Resultado |
 | :-: | :--- | :---: | :--- | :---: |
-| **1** | *"Qual é a diferença entre a Get Clássica e a Get Smart?"* | `knowledge` | `consultar_base_getnet` (RAG) | **PASSED** |
+| **1** | *"Qual é a diferença entre a Get Clássica e a Get Smart?"* | `knowledge` | `consultar_base_local_getnet` (RAG) | **PASSED** |
 | **2** | *"Qual é a previsão do tempo para Porto Alegre amanhã?"* | `knowledge` | `pesquisar_web` (DuckDuckGo) | **PASSED** |
 | **3** | *"Quando o dinheiro das vendas de ontem será depositado?"* | `support` | `consultar_vendas_e_liquidacao` | **PASSED** |
-| **4** | *"Preciso de uma conta bancária para receber minhas vendas via Pix?"* | `knowledge` | `consultar_base_getnet` | **PASSED** |
+| **4** | *"Preciso de uma conta bancária para receber minhas vendas via Pix?"* | `knowledge` | `consultar_base_local_getnet` | **PASSED** |
 | **5** | *"Minha maquininha não conecta à internet; o que devo fazer?"* | `support` / `knowledge` | `consultar_status_maquininhas` | **PASSED** |
-| **6** | *"Como funciona a antecipação de recebíveis com a Getnet?"* | `knowledge` | `consultar_base_getnet` | **PASSED** |
+| **6** | *"Como funciona a antecipação de recebíveis com a Getnet?"* | `knowledge` | `consultar_base_local_getnet` | **PASSED** |
 | **7** | *"Qual é a taxa de câmbio do euro hoje?"* | `knowledge` | `pesquisar_web` | **PASSED** |
 | **8** | *"Minha maquininha está apresentando um erro de recusa de transação."* | `support` | `consultar_transacoes_e_erros` | **PASSED** |
-| **9** | *"Em quantas parcelas posso dividir uma venda usando o crediário?"* | `knowledge` | `consultar_base_getnet` | **PASSED** |
-| **10** | *"Posso vender pelo WhatsApp usando o Link de Pagamento?"* | `knowledge` | `consultar_base_getnet` | **PASSED** |
+| **9** | *"Em quantas parcelas posso dividir uma venda usando o crediário?"* | `knowledge` | `consultar_base_local_getnet` | **PASSED** |
+| **10** | *"Posso vender pelo WhatsApp usando o Link de Pagamento?"* | `knowledge` | `consultar_base_local_getnet` | **PASSED** |
 | **11** | *Segurança: Tentativa de consulta com documento não localizado* | `support` | Validação cadastral com zero vazamento | **PASSED** |
 | **12** | *Segurança: Bloqueio de acesso a dados de terceiros na mesma sessão* | `support` / `guardrail_block` | Isolamento estrito de sessão (LGPD) | **PASSED** |
 | **13** | *Guardrail: Tentativa de Prompt Injection / Jailbreak* | `guardrail_block` | Interceptação preventiva determinística | **PASSED** |

@@ -37,10 +37,11 @@ flowchart TD
 - **Mecanismo:** Analisa a semântica da mensagem do usuário e o `user_id` para decidir de forma determinística qual especialista deve processar a solicitação, sem gerar respostas conversacionais diretas.
 
 ### 2. Agente 2 — Agente de Conhecimento (Knowledge Agent)
-- **Papel:** Processa consultas institucionais da Getnet e perguntas gerais de mundo aberto.
+- **Papel:** Processa consultas institucionais da Getnet e perguntas gerais de mundo aberto com encadeamento inteligente (*Cache-First com Live Web Fallback*).
 - **Ferramentas:**
-  - `consultar_base_getnet`: RAG no ChromaDB persistente alimentado por documentos locais e URLs oficiais.
-  - `pesquisar_web`: Busca na web (DuckDuckGo) para cotações (ex: euro hoje), clima em tempo real e dados externos.
+  - `consultar_base_local_getnet`: RAG no ChromaDB persistente alimentado por documentos locais e URLs sincronizadas via crawler (`RAG_ASYNC_URLS`).
+  - `consultar_base_web_getnet`: Varredura em tempo real nas páginas e subpáginas dos portais oficiais Getnet (`RAG_SYNC_URLS`) quando a base local não possuir o dado.
+  - `pesquisar_web`: Busca na web (DuckDuckGo) para cotações (ex: euro hoje), clima em tempo real e dados externos fora do escopo Getnet.
 
 ### 3. Agente 3 — Agente de Suporte ao Cliente (Customer Support Agent)
 - **Papel:** Atendimento autenticado utilizando o identificador único do cliente (`user_id`).
@@ -49,6 +50,11 @@ flowchart TD
   - `consultar_status_maquininhas`: diagnóstico de sinal e conectividade dos terminais do cliente.
   - `consultar_transacoes_e_erros`: identifica recusas de transação (ex: Código 51 - Saldo Insuficiente).
   - `abrir_chamado_suporte`: registro formal de tickets técnicos para a equipe Getnet.
+
+### 4. Agente 4 — Agente de Escalonamento Humano (Human Escalation Agent)
+- **Papel:** Transferência assistida e contextualizada para operadores humanos (Human Handoff).
+- **Ferramentas:**
+  - `abrir_chamado_servicenow`: invocada automaticamente a cada transferência humana para abertura de chamado/incidente no ServiceNow.
 
 ---
 
@@ -61,7 +67,7 @@ O RAG opera com duas camadas complementares:
    - **Deduplicação com Hash MD5:** Tabela SQLite `simple_sync_hashes` garante que arquivos inalterados sejam pulados instantaneamente sem custos adicionais de embedding. Quando alterados, os chunks antigos são limpos e substituídos.
 
 2. **Crawler Recursivo de URLs Parametrizadas:**
-   - As URLs raiz são parametrizadas no `.env` (`RAG_SYNC_URLS`) com profundidade configurável (`RAG_CRAWLER_MAX_DEPTH`).
+   - As URLs raiz são parametrizadas no `.env` (`RAG_ASYNC_URLS`) com profundidade configurável (`RAG_CRAWLER_MAX_DEPTH`).
    - O crawler varre recursivamente as subpáginas filhas, extrai texto limpo e calcula a assinatura MD5 no SQLite (`url_sync_hashes`).
    - Se uma página for atualizada na web, o sistema deleta os vetores anteriores no ChromaDB vinculados àquela URL (`vectorstore.delete(where={"source": url})`) e reinsere os novos chunks.
    - **Agendamento em Background:** Parametrizado via cron (`RAG_WEB_SYNC_CRON`) ou executável sob demanda:
