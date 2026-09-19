@@ -25,7 +25,7 @@ llm = ChatOpenAI(
 
 ORCHESTRATOR_PROMPT = """Você é o Agente Roteador (Router Agent) do ecossistema de suporte da Getnet.
 
-Sua única responsabilidade é analisar a mensagem recebida do usuário e decidir qual agente especialista deve atendê-la.
+Sua responsabilidade é analisar a mensagem recebida e decidir qual agente especialista deve atendê-la.
 
 Especialistas disponíveis:
 1. `knowledge` (Agente de Conhecimento):
@@ -33,15 +33,20 @@ Especialistas disponíveis:
    - Perguntas de uso geral fora do catálogo da Getnet que demandam busca web (ex: previsão do tempo, cotação de moedas como euro/dólar, notícias).
    
 2. `support` (Agente de Suporte ao Cliente):
-   - Perguntas que envolvam dados específicos, histórico financeiro ou terminais do cliente autenticado (user_id).
-   - Exemplos: Quando o dinheiro das vendas de ontem será depositado, por que a maquininha do cliente não conecta ou está sem sinal, análise de erros de transação recusada na maquininha (código 51, 05), abertura de chamados técnicos.
+   - Perguntas que envolvam dados específicos, histórico financeiro ou terminais do cliente (ex: quando o dinheiro das vendas de ontem será depositado, maquininha sem sinal, erro 51/05, chamados).
+   - Respostas a solicitações de identificação/documento do cliente (ex: códigos, números, CPF, identificadores de cadastro).
+
+DIRETRIZ DE CONTEXTO:
+Se o status indicar que o suporte estava aguardando identificação do cliente:
+- Se a mensagem do usuário for uma resposta tentando fornecer código, documento, número ou dados de identificação (ex: '123', 'fgh', '111.222.333-44', 'meu cpf é tal'), escolha 'support' com categoria 'Autenticação'.
+- Se o usuário mudou de assunto e fez uma nova pergunta conceitual/geral (ex: 'Qual é a diferença entre a Get Clássica e a Get Smart?', 'Como funciona o Pix?'), escolha 'knowledge'.
 
 Responda APENAS com um JSON rigorosamente válido:
-{{
+{
   "next_agent": "<knowledge|support>",
-  "category": "<ex: Comparativo Produtos, Financeiro/Extrato, Clima/Geral, Conectividade POS, Transações, Crediário>",
+  "category": "<ex: Comparativo Produtos, Financeiro/Extrato, Clima/Geral, Conectividade POS, Transações, Autenticação>",
   "reason": "<breve justificativa>"
-}}
+}
 """
 
 
@@ -50,10 +55,16 @@ def orchestrator_node(state: SupportState) -> dict:
     messages = state.get("messages", [])
     last_message = messages[-1].content if messages else ""
     user_id = state.get("user_id", "cliente1988")
+    awaiting_id = state.get("awaiting_identification", False)
+
+    context_info = f"Cliente ID: {user_id}\n"
+    if awaiting_id:
+        context_info += "STATUS: O suporte solicitou anteriormente a identificação (documento/CPF) do cliente.\n"
+    context_info += f"Mensagem do usuário: {last_message}"
 
     response = llm.invoke([
         SystemMessage(content=ORCHESTRATOR_PROMPT),
-        HumanMessage(content=f"Cliente ID: {user_id}\nMensagem do usuário: {last_message}"),
+        HumanMessage(content=context_info),
     ])
 
     try:
@@ -77,11 +88,19 @@ def orchestrator_node(state: SupportState) -> dict:
     if next_agent in ["rag", "research"]:
         next_agent = "knowledge"
 
-    return {
+    result = {
         "next_agent": next_agent,
         "category": category,
         "routing_reason": reason,
     }
+
+    # Se o usuário estava aguardando identificação mas decidiu mudar de assunto para o conhecimento geral,
+    # limpamos o estado de espera para liberar a conversa
+    if awaiting_id and next_agent != "support":
+        result["awaiting_identification"] = False
+        result["pending_support_query"] = None
+
+    return result
 
 
 def route_after_orchestrator(state: SupportState) -> str:
