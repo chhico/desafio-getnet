@@ -36,3 +36,7 @@ class SupportState(TypedDict):
     authenticated_user_id: str | None
     awaiting_identification: bool | None
     pending_support_query: str | None
+
+    # Guardrails de Segurança e Integridade
+    is_safe: bool | None
+    guardrail_reason: str | None

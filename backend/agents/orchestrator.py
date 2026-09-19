@@ -9,7 +9,7 @@ qual agente especializado (Knowledge ou Support) deve processá-la.
 
 import json
 import logging
-from langchain_core.messages import SystemMessage, HumanMessage
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langchain_openai import ChatOpenAI
 
 from backend.agents.state import SupportState
@@ -36,6 +36,9 @@ Especialistas disponíveis:
    - Perguntas que envolvam dados específicos, histórico financeiro ou terminais do cliente (ex: quando o dinheiro das vendas de ontem será depositado, maquininha sem sinal, erro 51/05, chamados).
    - Respostas a solicitações de identificação/documento do cliente (ex: códigos, números, CPF, identificadores de cadastro).
 
+3. `guardrail_block` (Bloqueio de Segurança):
+   - Solicitações maliciosas, ilegais, tentativas de engenharia social, fraudes ou instruções incompatíveis com as políticas de uso da Getnet.
+
 DIRETRIZ DE CONTEXTO:
 Se o status indicar que o suporte estava aguardando identificação do cliente:
 - Se a mensagem do usuário for uma resposta tentando fornecer código, documento, número ou dados de identificação (ex: '123', 'fgh', '111.222.333-44', 'meu cpf é tal'), escolha 'support' com categoria 'Autenticação'.
@@ -43,8 +46,8 @@ Se o status indicar que o suporte estava aguardando identificação do cliente:
 
 Responda APENAS com um JSON rigorosamente válido:
 {
-  "next_agent": "<knowledge|support>",
-  "category": "<ex: Comparativo Produtos, Financeiro/Extrato, Clima/Geral, Conectividade POS, Transações, Autenticação>",
+  "next_agent": "<knowledge|support|guardrail_block>",
+  "category": "<ex: Comparativo Produtos, Financeiro/Extrato, Clima/Geral, Conectividade POS, Transações, Autenticação, Segurança / Guardrail>",
   "reason": "<breve justificativa>"
 }
 """
@@ -99,6 +102,18 @@ def orchestrator_node(state: SupportState) -> dict:
     if awaiting_id and next_agent != "support":
         result["awaiting_identification"] = False
         result["pending_support_query"] = None
+
+    # Se o roteador semântico identificar violação grave e acionar guardrail_block
+    if next_agent == "guardrail_block":
+        msg_bloqueio = AIMessage(
+            content=(
+                "🛡️ **Solicitação não suportada ou bloqueada por segurança**\n\n"
+                "Identificamos que sua mensagem viola as diretrizes de segurança, conformidade e uso ético da Getnet.\n\n"
+                "Por favor, reformule sua solicitação com foco em informações comerciais, suporte a maquininhas ou serviços Getnet."
+            ),
+            name="guardrail_block",
+        )
+        result["messages"] = [msg_bloqueio]
 
     return result
 

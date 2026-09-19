@@ -12,6 +12,7 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 
 from backend.agents.state import SupportState
+from backend.agents.guardrails import guardrail_node, route_after_guardrail
 from backend.agents.orchestrator import orchestrator_node, route_after_orchestrator
 from backend.agents.knowledge_agent import knowledge_node
 from backend.agents.support_agent import support_node
@@ -19,33 +20,49 @@ from backend.agents.support_agent import support_node
 
 def build_graph(use_checkpointer: bool = True) -> StateGraph:
     """
-    Constrói e compila o grafo multiagente.
+    Constrói e compila o grafo multiagente com camada de Guardrails de entrada.
+    Fluxo:
+      START -> guardrail:
+        - seguro   -> orchestrator -> [knowledge | support | guardrail_block] -> END
+        - bloqueio -> END
     """
     builder = StateGraph(SupportState)
 
-    # 1. Registro dos Nós dos 3 Agentes
+    # 1. Registro dos Nós (Guardrail + 3 Agentes)
+    builder.add_node("guardrail",    guardrail_node)
     builder.add_node("orchestrator", orchestrator_node)
     builder.add_node("knowledge",    knowledge_node)
     builder.add_node("support",      support_node)
 
-    # 2. Ponto de Entrada: Toda mensagem vai primeiro para o Agente Roteador
-    builder.add_edge(START, "orchestrator")
+    # 2. Ponto de Entrada: Toda mensagem passa primeiro pelo Guardrail de Segurança
+    builder.add_edge(START, "guardrail")
 
-    # 3. Aresta Condicional de Roteamento Dinâmico
+    # 3. Aresta Condicional pós-Guardrail
+    builder.add_conditional_edges(
+        "guardrail",
+        route_after_guardrail,
+        {
+            "orchestrator": "orchestrator",
+            "guardrail_block": END,
+        },
+    )
+
+    # 4. Aresta Condicional de Roteamento Dinâmico (Orchestrator)
     builder.add_conditional_edges(
         "orchestrator",
         route_after_orchestrator,
         {
             "knowledge": "knowledge",
             "support":   "support",
+            "guardrail_block": END,
         },
     )
 
-    # 4. Finalização
+    # 5. Finalização
     builder.add_edge("knowledge", END)
     builder.add_edge("support",   END)
 
-    # 5. Checkpointer de Memória
+    # 6. Checkpointer de Memória
     checkpointer = MemorySaver() if use_checkpointer else None
 
     return builder.compile(checkpointer=checkpointer)
