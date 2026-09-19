@@ -43,6 +43,7 @@ const Dashboard = () => {
                     role: "assistant", 
                     content: res.response, 
                     agent: res.agent_used, 
+                    tools: res.tools_used || [],
                     tempId: Date.now() + 1 
                 }
             ]);
@@ -96,9 +97,14 @@ const Dashboard = () => {
                     ) : (
                         messages.map((msg) => (
                             <div key={msg.tempId} className={`message ${msg.role}`}>
-                                {msg.role.includes('assistant') && msg.agent && (
-                                    <div style={{ marginBottom: '0.35rem' }}>
-                                        <span className="agent-tag">Agente: {msg.agent}</span>
+                                {msg.role.includes('assistant') && (
+                                    <div style={{ marginBottom: '0.45rem', display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                                        {msg.agent && <span className="agent-tag">Agente: {msg.agent}</span>}
+                                        {msg.tools && msg.tools.length > 0 && (
+                                            <span className="tool-tag" title="Ferramentas corporativas executadas no turno">
+                                                🔧 {msg.tools.join(', ')}
+                                            </span>
+                                        )}
                                     </div>
                                 )}
                                 <strong>{msg.role === 'user' ? 'Você' : 'Assistente'}:</strong><br/>

@@ -179,6 +179,18 @@ input:focus { border-color: var(--primary); }
     letter-spacing: 0.03em;
 }
 
+.tool-tag {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 500;
+    background: #fef3c7;
+    color: #92400e;
+    border: 1px solid #fde68a;
+    padding: 0.15rem 0.55rem;
+    border-radius: 9999px;
+    letter-spacing: 0.02em;
+}
+
 .message code {
     background: rgba(0, 0, 0, 0.06);
     padding: 0.1rem 0.35rem;
