@@ -149,12 +149,12 @@ def crawl_recursive(
 
 def sync_urls_to_vectorstore(vectorstore, force_refresh: bool = False) -> int:
     """
-    Varre as URLs configuradas em RAG_SYNC_URLS, detecta mudanças por Hash MD5,
+    Varre as URLs configuradas em RAG_ASYNC_URLS, detecta mudanças por Hash MD5,
     invalida vetores antigos no ChromaDB e indexa o conteúdo novo.
     """
     _init_sqlite_db()
 
-    raw_urls = settings.RAG_SYNC_URLS
+    raw_urls = settings.RAG_ASYNC_URLS
     if isinstance(raw_urls, str):
         urls = [u.strip() for u in raw_urls.split(",") if u.strip()]
     else:
