@@ -31,3 +31,8 @@ class SupportState(TypedDict):
 
     # Metadados da Sessão (Classificação / Dashboard)
     category: str | None
+
+    # Autenticação e Isolamento de Sessão por Documento
+    authenticated_user_id: str | None
+    awaiting_identification: bool | None
+    pending_support_query: str | None

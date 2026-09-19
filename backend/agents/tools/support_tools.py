@@ -15,6 +15,7 @@ from langchain_core.tools import tool
 
 _CLIENT_DATABASE = {
     "cliente1988": {
+        "cpf": "111.222.333-44",
         "nome": "Comércio Silva & Santos Ltda",
         "cnpj": "12.345.678/0001-90",
         "segmento": "Varejo / Moda",
@@ -76,8 +77,240 @@ _CLIENT_DATABASE = {
                 "motivo_tecnico": "Transação autorizada com sucesso"
             }
         ]
+    },
+    "cliente2024": {
+        "cpf": "222.333.444-55",
+        "nome": "Padaria & Confeitaria Pão D'Ouro",
+        "cnpj": "23.456.789/0001-01",
+        "segmento": "Alimentação / Panificação",
+        "conta_bancaria": {
+            "banco": "237 - Banco Bradesco S.A.",
+            "agencia": "4567",
+            "conta": "12345-6",
+            "tipo": "Conta Corrente Jurídica"
+        },
+        "maquininhas": [
+            {
+                "serial": "POS-7733",
+                "modelo": "Get Mini",
+                "status": "Online",
+                "conexao": "Chip 4G Vivo (Sinal Excelente)",
+                "ultima_comunicacao": "Hoje às 19:15",
+                "bobina_status": "Não se aplica (comprovante digital por SMS)"
+            },
+            {
+                "serial": "POS-7734",
+                "modelo": "Get Smart",
+                "status": "Online",
+                "conexao": "Wi-Fi (Balcão)",
+                "ultima_comunicacao": "Hoje às 19:20",
+                "bobina_status": "Normal"
+            }
+        ],
+        "vendas_ontem": {
+            "data": "Ontem",
+            "total_bruto": 3420.00,
+            "total_liquido": 3317.40,
+            "quantidade_vendas": 42,
+            "detalhes": [
+                {"tipo": "Débito", "valor": 1900.00, "taxa_mdr": "1.2%"},
+                {"tipo": "Crédito à Vista", "valor": 1520.00, "taxa_mdr": "2.5%"}
+            ],
+            "previsao_deposito": "Hoje até às 20h creditado na sua conta Bradesco (Agência 4567, Conta 12345-6), modalidade acelerada D+1."
+        },
+        "transacoes_recentes": [
+            {
+                "id_transacao": "TXN-20241",
+                "data_hora": "Hoje às 18:40",
+                "valor": 65.50,
+                "modalidade": "Débito",
+                "bandeira": "Elo",
+                "status": "APROVADA",
+                "codigo_recusa": None,
+                "motivo_tecnico": "Transação autorizada com sucesso"
+            }
+        ]
+    },
+    "cliente3030": {
+        "cpf": "333.444.555-66",
+        "nome": "Drogaria & Farmácia Vida e Saúde",
+        "cnpj": "34.567.890/0001-12",
+        "segmento": "Saúde / Drogaria",
+        "conta_bancaria": {
+            "banco": "001 - Banco do Brasil S.A.",
+            "agencia": "3344",
+            "conta": "55667-8",
+            "tipo": "Conta Corrente Jurídica"
+        },
+        "maquininhas": [
+            {
+                "serial": "POS-3321",
+                "modelo": "Get Smart",
+                "status": "Online",
+                "conexao": "Wi-Fi Principal",
+                "ultima_comunicacao": "Hoje às 19:50",
+                "bobina_status": "Alerta: Pouco Papel (Troca recomendada)"
+            }
+        ],
+        "vendas_ontem": {
+            "data": "Ontem",
+            "total_bruto": 890.00,
+            "total_liquido": 863.30,
+            "quantidade_vendas": 15,
+            "detalhes": [
+                {"tipo": "Débito", "valor": 540.00, "taxa_mdr": "1.3%"},
+                {"tipo": "Crédito", "valor": 350.00, "taxa_mdr": "2.7%"}
+            ],
+            "previsao_deposito": "Amanhã até às 12h no Banco do Brasil (Agência 3344, Conta 55667-8), prazo D+2."
+        },
+        "transacoes_recentes": [
+            {
+                "id_transacao": "TXN-33109",
+                "data_hora": "Hoje às 17:10",
+                "valor": 88.00,
+                "modalidade": "Crédito",
+                "bandeira": "Visa",
+                "status": "RECUSADA",
+                "codigo_recusa": "05",
+                "motivo_tecnico": "Não Autorizada pelo Banco Emissor (Erro 05)",
+                "orientacao": "O banco emissor do cartão bloqueou a transação por suspeita preventiva ou restrição cadastral. O cliente deve ligar para o número no verso do cartão."
+            }
+        ]
+    },
+    "cliente4040": {
+        "cpf": "444.555.666-77",
+        "nome": "Auto Mecânica & Peças Central",
+        "cnpj": "45.678.901/0001-23",
+        "segmento": "Automotivo / Serviços",
+        "conta_bancaria": {
+            "banco": "104 - Caixa Econômica Federal",
+            "agencia": "0987",
+            "conta": "77889-0",
+            "tipo": "Conta Jurídica"
+        },
+        "maquininhas": [
+            {
+                "serial": "POS-4410",
+                "modelo": "Get Clássica",
+                "status": "Offline / Sem Sinal",
+                "conexao": "Chip 3G Tim (Sem comunicação há 3 dias)",
+                "ultima_comunicacao": "3 dias atrás",
+                "bobina_status": "Normal"
+            }
+        ],
+        "vendas_ontem": {
+            "data": "Ontem",
+            "total_bruto": 0.00,
+            "total_liquido": 0.00,
+            "quantidade_vendas": 0,
+            "detalhes": [],
+            "previsao_deposito": "Sem lançamentos de vendas registradas no dia de ontem."
+        },
+        "transacoes_recentes": [
+            {
+                "id_transacao": "TXN-44001",
+                "data_hora": "3 dias atrás",
+                "valor": 450.00,
+                "modalidade": "Crédito Parcelado",
+                "bandeira": "Mastercard",
+                "status": "RECUSADA",
+                "codigo_recusa": "96",
+                "motivo_tecnico": "Falha de Comunicação / Timeout da Operadora",
+                "orientacao": "Houve perda de sinal móvel durante o envio da transação. É necessário reiniciar a maquininha ou reposicionar em local com melhor cobertura celular."
+            }
+        ]
+    },
+    "cliente5050": {
+        "cpf": "555.666.777-88",
+        "nome": "Restaurante e Churrascaria Brasa Nobre",
+        "cnpj": "56.789.012/0001-34",
+        "segmento": "Gastronomia / Restaurante",
+        "conta_bancaria": {
+            "banco": "341 - Itaú Unibanco S.A.",
+            "agencia": "8877",
+            "conta": "33221-1",
+            "tipo": "Conta Corrente Jurídica"
+        },
+        "maquininhas": [
+            {
+                "serial": "POS-501",
+                "modelo": "Get Smart",
+                "status": "Online",
+                "conexao": "Wi-Fi 5Ghz Salão",
+                "ultima_comunicacao": "Hoje às 19:55",
+                "bobina_status": "Normal"
+            },
+            {
+                "serial": "POS-502",
+                "modelo": "Get Smart",
+                "status": "Online",
+                "conexao": "Wi-Fi 5Ghz Salão",
+                "ultima_comunicacao": "Hoje às 19:58",
+                "bobina_status": "Normal"
+            }
+        ],
+        "vendas_ontem": {
+            "data": "Ontem",
+            "total_bruto": 12800.00,
+            "total_liquido": 12416.00,
+            "quantidade_vendas": 114,
+            "detalhes": [
+                {"tipo": "Crédito", "valor": 8200.00, "taxa_mdr": "2.4%"},
+                {"tipo": "Débito", "valor": 4600.00, "taxa_mdr": "1.2%"}
+            ],
+            "previsao_deposito": "Antecipação Automática contratada: valor líquido de R$ 12.416,00 creditado com sucesso hoje às 10:00 na conta Itaú (Agência 8877, Conta 33221-1)."
+        },
+        "transacoes_recentes": [
+            {
+                "id_transacao": "TXN-50190",
+                "data_hora": "Hoje às 19:40",
+                "valor": 340.00,
+                "modalidade": "Crédito",
+                "bandeira": "Visa",
+                "status": "APROVADA",
+                "codigo_recusa": None,
+                "motivo_tecnico": "Transação autorizada com sucesso"
+            }
+        ]
     }
 }
+
+
+def buscar_cliente_por_documento(doc_or_id: str) -> Optional[tuple[str, dict]]:
+    """
+    Busca um cliente na base simulada a partir do ID de cliente, CPF ou CNPJ.
+    Ignora pontuações, traços e formatação.
+    Retorna (client_key, client_data) se encontrado, ou None se não localizado.
+    """
+    if not doc_or_id:
+        return None
+
+    import re
+    raw = doc_or_id.strip()
+    raw_lower = raw.lower()
+
+    # 1. Match direto por chave exata (ex: 'cliente1988', 'cliente2024')
+    if raw_lower in _CLIENT_DATABASE:
+        return raw_lower, _CLIENT_DATABASE[raw_lower]
+
+    # 2. Busca por menção da chave no texto (ex: 'meu id é cliente1988')
+    for key, data in _CLIENT_DATABASE.items():
+        if key in raw_lower:
+            return key, data
+
+    # 3. Match por dígitos de CPF ou CNPJ
+    digits_only = re.sub(r"\D", "", raw)
+    if digits_only and len(digits_only) >= 8:
+        for key, data in _CLIENT_DATABASE.items():
+            cpf_digits = re.sub(r"\D", "", data.get("cpf", ""))
+            if cpf_digits and digits_only == cpf_digits:
+                return key, data
+
+            cnpj_digits = re.sub(r"\D", "", data.get("cnpj", ""))
+            if cnpj_digits and digits_only == cnpj_digits:
+                return key, data
+
+    return None
 
 _ticket_sequence = 2000
 
