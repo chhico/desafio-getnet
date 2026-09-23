@@ -535,16 +535,16 @@ def buscar_cliente_por_documento(doc_or_id: str) -> Optional[tuple[str, dict]]:
         if key in raw_lower:
             return key, data
 
-    # 3. Match por dígitos de CPF ou CNPJ
+    # 3. Match por dígitos de CPF ou CNPJ (suporta CPF exato ou contido na mensagem com datas/códigos)
     digits_only = re.sub(r"\D", "", raw)
     if digits_only and len(digits_only) >= 8:
         for key, data in _CLIENT_DATABASE.items():
             cpf_digits = re.sub(r"\D", "", data.get("cpf", ""))
-            if cpf_digits and digits_only == cpf_digits:
+            if cpf_digits and (digits_only == cpf_digits or cpf_digits in digits_only):
                 return key, data
 
             cnpj_digits = re.sub(r"\D", "", data.get("cnpj", ""))
-            if cnpj_digits and digits_only == cnpj_digits:
+            if cnpj_digits and (digits_only == cnpj_digits or cnpj_digits in digits_only):
                 return key, data
 
     return None
