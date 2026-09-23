@@ -24,12 +24,16 @@ from backend.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = "bds/rag_sync.sqlite"
+DB_PATH = getattr(settings, "RAG_SYNC_DB_PATH", "bds/rag_sync.sqlite")
 
 
-def _init_sqlite_db():
-    os.makedirs("bds", exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+def init_rag_db(db_path: Optional[str] = None):
+    """Garante a existência das tabelas url_sync_hashes e simple_sync_hashes no SQLite."""
+    target_path = db_path or getattr(settings, "RAG_SYNC_DB_PATH", "bds/rag_sync.sqlite")
+    folder = os.path.dirname(target_path)
+    if folder:
+        os.makedirs(folder, exist_ok=True)
+    conn = sqlite3.connect(target_path)
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS url_sync_hashes (
@@ -38,8 +42,52 @@ def _init_sqlite_db():
             last_crawled TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS simple_sync_hashes (
+            filename TEXT PRIMARY KEY,
+            hash TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     conn.commit()
     conn.close()
+
+
+def _init_sqlite_db():
+    init_rag_db()
+
+
+def check_all_urls_have_records(urls: Optional[List[str]] = None, db_path: Optional[str] = None) -> tuple[bool, list[str]]:
+    """
+    Verifica se cada uma das URLs raiz configuradas possui pelo menos um registro em url_sync_hashes.
+    Retorna uma tupla (all_present, missing_urls).
+    """
+    target_path = db_path or getattr(settings, "RAG_SYNC_DB_PATH", "bds/rag_sync.sqlite")
+    init_rag_db(target_path)
+
+    if urls is None:
+        raw_urls = settings.RAG_ASYNC_URLS
+        if isinstance(raw_urls, str):
+            urls = [u.strip() for u in raw_urls.split(",") if u.strip()]
+        else:
+            urls = list(raw_urls)
+
+    conn = sqlite3.connect(target_path)
+    cursor = conn.cursor()
+    missing_urls = []
+
+    for root_url in urls:
+        norm = root_url.strip().rstrip("/")
+        # Checa se a URL exata ou alguma subpágina foi indexada
+        cursor.execute(
+            "SELECT 1 FROM url_sync_hashes WHERE url = ? OR url = ? OR url LIKE ? LIMIT 1",
+            (norm, norm + "/", norm + "/%")
+        )
+        if cursor.fetchone() is None:
+            missing_urls.append(root_url)
+
+    conn.close()
+    return (len(missing_urls) == 0, missing_urls)
 
 
 def clean_html(html_content: str) -> str:
@@ -162,6 +210,17 @@ def sync_urls_to_vectorstore(vectorstore, force_refresh: bool = False) -> int:
 
     max_depth = getattr(settings, "RAG_CRAWLER_MAX_DEPTH", 2)
 
+    all_present, missing_urls = check_all_urls_have_records(urls)
+    effective_force = force_refresh
+    if not all_present:
+        logger.info(
+            f"[Crawler Sync] URLs sem registro detectadas em RAG_ASYNC_URLS: {missing_urls}. "
+            f"Reprocessando todas as URLs e subpáginas..."
+        )
+        effective_force = True
+    elif force_refresh:
+        logger.info("[Crawler Sync] Sincronização forçada (force=True). Reprocessando todas as URLs e subpáginas...")
+
     logger.info(f"[Crawler Sync] Rastreando {len(urls)} URLs configuradas...")
     docs = crawl_recursive(urls, max_depth=max_depth)
 
@@ -169,7 +228,8 @@ def sync_urls_to_vectorstore(vectorstore, force_refresh: bool = False) -> int:
         logger.info("[Crawler Sync] Nenhuma página encontrada ou rede inacessível.")
         return 0
 
-    conn = sqlite3.connect(DB_PATH)
+    target_path = getattr(settings, "RAG_SYNC_DB_PATH", "bds/rag_sync.sqlite")
+    conn = sqlite3.connect(target_path)
     cursor = conn.cursor()
 
     updated_docs = []
@@ -184,8 +244,8 @@ def sync_urls_to_vectorstore(vectorstore, force_refresh: bool = False) -> int:
         cursor.execute("SELECT content_hash FROM url_sync_hashes WHERE url = ?", (url,))
         row = cursor.fetchone()
 
-        if force_refresh or row is None or row[0] != content_hash:
-            logger.info(f"[Crawler Sync] URL nova ou modificada: {url}")
+        if effective_force or row is None or row[0] != content_hash:
+            logger.info(f"[Crawler Sync] URL para indexação (force={effective_force}): {url}")
             
             # 1. Se já existia no banco vetorial, remove chunks antigos dessa URL específica
             try:

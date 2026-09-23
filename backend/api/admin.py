@@ -1,3 +1,4 @@
+import asyncio
 from enum import Enum
 from fastapi import APIRouter, Query
 from backend.infrastructure.rag.sync_web import run_sync
@@ -33,9 +34,8 @@ async def trigger_web_sync(
       - `'urls'`: Apenas as URLs web configuradas via crawler.
       - `'all'`: Ambos (arquivos físicos locais e URLs web).
     """
-    result = run_sync(force=force, target=target.value)
+    result = await asyncio.to_thread(run_sync, force=force, target=target.value)
     return {
-        "message": "Sincronização concluída com sucesso.",
         "target": target.value,
         "force": force,
         **result

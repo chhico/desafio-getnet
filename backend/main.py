@@ -14,6 +14,19 @@ async def lifespan(app: FastAPI):
     print("=" * 54)
     print("  [API] Getnet Multi-Agent Customer Support API")
     print("=" * 54)
+
+    import asyncio
+    from backend.infrastructure.rag.enrichment_service import (
+        init_and_check_rag_tables,
+        run_startup_enrichment
+    )
+
+    # 1. Verifica e cria tabelas simple_sync_hashes e url_sync_hashes na subida
+    init_and_check_rag_tables()
+
+    # 2. Inicia o enriquecimento em background (não-bloqueante)
+    asyncio.create_task(run_startup_enrichment())
+
     yield
     print("Desligando Servidor de API...")
 
