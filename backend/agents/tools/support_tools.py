@@ -11,6 +11,17 @@ from langchain_core.tools import tool
 
 # ---------------------------------------------------------------------------
 # Base de Dados Simulada (Mock Realista Getnet - Indexada por user_id)
+#
+# Estrutura de cada cliente:
+#   - cpf / cnpj / nome / segmento: dados cadastrais básicos.
+#   - conta_bancaria: conta de liquidação vinculada ao credenciamento Getnet.
+#   - maquininhas: lista de terminais POS ativos (status de conexão, modelo, serial).
+#   - historico_financeiro: lista de fechamentos diários de vendas. Cada entrada
+#       representa um dia completo com data ISO (YYYY-MM-DD), permitindo consultas
+#       por data específica ou listagem de todos os dias disponíveis.
+#   - transacoes: lista de transações individuais com data/hora ISO, status variado
+#       (APROVADA | RECUSADA | AGUARDANDO_APROVACAO | CANCELADA | ESTORNADA) e
+#       orientacao técnica. Suporta filtragem por id, status e data.
 # ---------------------------------------------------------------------------
 
 _CLIENT_DATABASE = {
@@ -43,21 +54,48 @@ _CLIENT_DATABASE = {
                 "bobina_status": "Normal"
             }
         ],
-        "vendas_ontem": {
-            "data": "Ontem",
-            "total_bruto": 1250.00,
-            "total_liquido": 1205.50,
-            "quantidade_vendas": 8,
-            "detalhes": [
-                {"tipo": "Crédito à Vista", "valor": 850.00, "taxa_mdr": "2.8%"},
-                {"tipo": "Débito", "valor": 400.00, "taxa_mdr": "1.3%"}
-            ],
-            "previsao_deposito": "Amanhã até às 18h na sua conta cadastrada Santander (Agência 1234, Conta 98765-4), conforme prazo contratual de liquidação D+2."
-        },
-        "transacoes_recentes": [
+        "historico_financeiro": [
+            {
+                "data": "2026-09-22",
+                "total_bruto": 1250.00,
+                "total_liquido": 1205.50,
+                "quantidade_vendas": 8,
+                "detalhes": [
+                    {"tipo": "Crédito à Vista", "valor": 850.00, "taxa_mdr": "2.8%"},
+                    {"tipo": "Débito", "valor": 400.00, "taxa_mdr": "1.3%"}
+                ],
+                "prazo_liquidacao": "D+2",
+                "previsao_deposito": "Depósito previsto para 2026-09-24 até às 18h na conta Santander (Ag: 1234, CC: 98765-4)."
+            },
+            {
+                "data": "2026-09-21",
+                "total_bruto": 980.00,
+                "total_liquido": 947.14,
+                "quantidade_vendas": 6,
+                "detalhes": [
+                    {"tipo": "Crédito à Vista", "valor": 580.00, "taxa_mdr": "2.8%"},
+                    {"tipo": "Débito", "valor": 400.00, "taxa_mdr": "1.3%"}
+                ],
+                "prazo_liquidacao": "D+2",
+                "previsao_deposito": "Depósito previsto para 2026-09-23 até às 18h na conta Santander (Ag: 1234, CC: 98765-4)."
+            },
+            {
+                "data": "2026-09-20",
+                "total_bruto": 430.00,
+                "total_liquido": 418.17,
+                "quantidade_vendas": 3,
+                "detalhes": [
+                    {"tipo": "Débito", "valor": 430.00, "taxa_mdr": "1.3%"}
+                ],
+                "prazo_liquidacao": "D+2",
+                "previsao_deposito": "Depósito previsto para 2026-09-22 até às 18h na conta Santander (Ag: 1234, CC: 98765-4)."
+            }
+        ],
+        "transacoes": [
             {
                 "id_transacao": "TXN-99821",
-                "data_hora": "Hoje às 16:45",
+                "data": "2026-09-22",
+                "hora": "16:45",
                 "valor": 320.00,
                 "modalidade": "Crédito",
                 "bandeira": "Mastercard",
@@ -68,13 +106,39 @@ _CLIENT_DATABASE = {
             },
             {
                 "id_transacao": "TXN-99810",
-                "data_hora": "Hoje às 14:12",
+                "data": "2026-09-22",
+                "hora": "14:12",
                 "valor": 150.00,
                 "modalidade": "Débito",
                 "bandeira": "Visa",
                 "status": "APROVADA",
                 "codigo_recusa": None,
-                "motivo_tecnico": "Transação autorizada com sucesso"
+                "motivo_tecnico": "Transação autorizada com sucesso",
+                "orientacao": None
+            },
+            {
+                "id_transacao": "TXN-99798",
+                "data": "2026-09-21",
+                "hora": "11:30",
+                "valor": 200.00,
+                "modalidade": "Crédito Parcelado",
+                "bandeira": "Visa",
+                "status": "AGUARDANDO_APROVACAO",
+                "codigo_recusa": None,
+                "motivo_tecnico": "Aguardando confirmação do banco emissor",
+                "orientacao": "A transação está em análise pelo banco emissor. Normalmente confirmada em até 2 horas. Não tente reprocessar para evitar duplicidade."
+            },
+            {
+                "id_transacao": "TXN-99750",
+                "data": "2026-09-20",
+                "hora": "09:05",
+                "valor": 80.00,
+                "modalidade": "Débito",
+                "bandeira": "Elo",
+                "status": "ESTORNADA",
+                "codigo_recusa": None,
+                "motivo_tecnico": "Estorno solicitado pelo estabelecimento",
+                "orientacao": "O valor foi estornado ao portador dentro do prazo previsto. Nenhuma ação adicional necessária."
             }
         ]
     },
@@ -107,27 +171,68 @@ _CLIENT_DATABASE = {
                 "bobina_status": "Normal"
             }
         ],
-        "vendas_ontem": {
-            "data": "Ontem",
-            "total_bruto": 3420.00,
-            "total_liquido": 3317.40,
-            "quantidade_vendas": 42,
-            "detalhes": [
-                {"tipo": "Débito", "valor": 1900.00, "taxa_mdr": "1.2%"},
-                {"tipo": "Crédito à Vista", "valor": 1520.00, "taxa_mdr": "2.5%"}
-            ],
-            "previsao_deposito": "Hoje até às 20h creditado na sua conta Bradesco (Agência 4567, Conta 12345-6), modalidade acelerada D+1."
-        },
-        "transacoes_recentes": [
+        "historico_financeiro": [
+            {
+                "data": "2026-09-22",
+                "total_bruto": 3420.00,
+                "total_liquido": 3317.40,
+                "quantidade_vendas": 42,
+                "detalhes": [
+                    {"tipo": "Débito", "valor": 1900.00, "taxa_mdr": "1.2%"},
+                    {"tipo": "Crédito à Vista", "valor": 1520.00, "taxa_mdr": "2.5%"}
+                ],
+                "prazo_liquidacao": "D+1",
+                "previsao_deposito": "Depósito previsto para 2026-09-23 até às 20h na conta Bradesco (Ag: 4567, CC: 12345-6), modalidade acelerada."
+            },
+            {
+                "data": "2026-09-21",
+                "total_bruto": 2980.00,
+                "total_liquido": 2890.60,
+                "quantidade_vendas": 37,
+                "detalhes": [
+                    {"tipo": "Débito", "valor": 1600.00, "taxa_mdr": "1.2%"},
+                    {"tipo": "Crédito à Vista", "valor": 1380.00, "taxa_mdr": "2.5%"}
+                ],
+                "prazo_liquidacao": "D+1",
+                "previsao_deposito": "Depositado em 2026-09-22 às 19:45 na conta Bradesco (Ag: 4567, CC: 12345-6)."
+            }
+        ],
+        "transacoes": [
             {
                 "id_transacao": "TXN-20241",
-                "data_hora": "Hoje às 18:40",
+                "data": "2026-09-22",
+                "hora": "18:40",
                 "valor": 65.50,
                 "modalidade": "Débito",
                 "bandeira": "Elo",
                 "status": "APROVADA",
                 "codigo_recusa": None,
-                "motivo_tecnico": "Transação autorizada com sucesso"
+                "motivo_tecnico": "Transação autorizada com sucesso",
+                "orientacao": None
+            },
+            {
+                "id_transacao": "TXN-20235",
+                "data": "2026-09-22",
+                "hora": "10:22",
+                "valor": 122.00,
+                "modalidade": "Crédito à Vista",
+                "bandeira": "Mastercard",
+                "status": "CANCELADA",
+                "codigo_recusa": None,
+                "motivo_tecnico": "Cancelado pelo operador antes da finalização",
+                "orientacao": "A transação foi cancelada pelo operador da maquininha antes de ser concluída. Nenhum débito foi efetuado no cartão do cliente."
+            },
+            {
+                "id_transacao": "TXN-20210",
+                "data": "2026-09-21",
+                "hora": "15:05",
+                "valor": 48.90,
+                "modalidade": "Débito",
+                "bandeira": "Visa",
+                "status": "APROVADA",
+                "codigo_recusa": None,
+                "motivo_tecnico": "Transação autorizada com sucesso",
+                "orientacao": None
             }
         ]
     },
@@ -152,21 +257,37 @@ _CLIENT_DATABASE = {
                 "bobina_status": "Alerta: Pouco Papel (Troca recomendada)"
             }
         ],
-        "vendas_ontem": {
-            "data": "Ontem",
-            "total_bruto": 890.00,
-            "total_liquido": 863.30,
-            "quantidade_vendas": 15,
-            "detalhes": [
-                {"tipo": "Débito", "valor": 540.00, "taxa_mdr": "1.3%"},
-                {"tipo": "Crédito", "valor": 350.00, "taxa_mdr": "2.7%"}
-            ],
-            "previsao_deposito": "Amanhã até às 12h no Banco do Brasil (Agência 3344, Conta 55667-8), prazo D+2."
-        },
-        "transacoes_recentes": [
+        "historico_financeiro": [
+            {
+                "data": "2026-09-22",
+                "total_bruto": 890.00,
+                "total_liquido": 863.30,
+                "quantidade_vendas": 15,
+                "detalhes": [
+                    {"tipo": "Débito", "valor": 540.00, "taxa_mdr": "1.3%"},
+                    {"tipo": "Crédito", "valor": 350.00, "taxa_mdr": "2.7%"}
+                ],
+                "prazo_liquidacao": "D+2",
+                "previsao_deposito": "Depósito previsto para 2026-09-24 até às 12h no Banco do Brasil (Ag: 3344, CC: 55667-8)."
+            },
+            {
+                "data": "2026-09-21",
+                "total_bruto": 740.00,
+                "total_liquido": 718.78,
+                "quantidade_vendas": 12,
+                "detalhes": [
+                    {"tipo": "Débito", "valor": 400.00, "taxa_mdr": "1.3%"},
+                    {"tipo": "Crédito", "valor": 340.00, "taxa_mdr": "2.7%"}
+                ],
+                "prazo_liquidacao": "D+2",
+                "previsao_deposito": "Depósito previsto para 2026-09-23 até às 12h no Banco do Brasil (Ag: 3344, CC: 55667-8)."
+            }
+        ],
+        "transacoes": [
             {
                 "id_transacao": "TXN-33109",
-                "data_hora": "Hoje às 17:10",
+                "data": "2026-09-22",
+                "hora": "17:10",
                 "valor": 88.00,
                 "modalidade": "Crédito",
                 "bandeira": "Visa",
@@ -174,6 +295,30 @@ _CLIENT_DATABASE = {
                 "codigo_recusa": "05",
                 "motivo_tecnico": "Não Autorizada pelo Banco Emissor (Erro 05)",
                 "orientacao": "O banco emissor do cartão bloqueou a transação por suspeita preventiva ou restrição cadastral. O cliente deve ligar para o número no verso do cartão."
+            },
+            {
+                "id_transacao": "TXN-33098",
+                "data": "2026-09-22",
+                "hora": "13:45",
+                "valor": 210.00,
+                "modalidade": "Débito",
+                "bandeira": "Elo",
+                "status": "APROVADA",
+                "codigo_recusa": None,
+                "motivo_tecnico": "Transação autorizada com sucesso",
+                "orientacao": None
+            },
+            {
+                "id_transacao": "TXN-33085",
+                "data": "2026-09-21",
+                "hora": "09:30",
+                "valor": 55.00,
+                "modalidade": "Débito",
+                "bandeira": "Mastercard",
+                "status": "AGUARDANDO_APROVACAO",
+                "codigo_recusa": None,
+                "motivo_tecnico": "Aguardando confirmação do banco emissor",
+                "orientacao": "A transação está em análise pelo banco emissor. Normalmente confirmada em até 2 horas. Não tente reprocessar para evitar duplicidade."
             }
         ]
     },
@@ -198,18 +343,33 @@ _CLIENT_DATABASE = {
                 "bobina_status": "Normal"
             }
         ],
-        "vendas_ontem": {
-            "data": "Ontem",
-            "total_bruto": 0.00,
-            "total_liquido": 0.00,
-            "quantidade_vendas": 0,
-            "detalhes": [],
-            "previsao_deposito": "Sem lançamentos de vendas registradas no dia de ontem."
-        },
-        "transacoes_recentes": [
+        "historico_financeiro": [
+            {
+                "data": "2026-09-22",
+                "total_bruto": 0.00,
+                "total_liquido": 0.00,
+                "quantidade_vendas": 0,
+                "detalhes": [],
+                "prazo_liquidacao": "N/A",
+                "previsao_deposito": "Sem lançamentos de vendas registradas neste dia."
+            },
+            {
+                "data": "2026-09-19",
+                "total_bruto": 450.00,
+                "total_liquido": 437.40,
+                "quantidade_vendas": 2,
+                "detalhes": [
+                    {"tipo": "Crédito Parcelado", "valor": 450.00, "taxa_mdr": "2.8%"}
+                ],
+                "prazo_liquidacao": "D+30 (parcelado)",
+                "previsao_deposito": "Parcelas mensais creditadas a partir de 2026-10-19 na conta Caixa Econômica (Ag: 0987, CC: 77889-0)."
+            }
+        ],
+        "transacoes": [
             {
                 "id_transacao": "TXN-44001",
-                "data_hora": "3 dias atrás",
+                "data": "2026-09-19",
+                "hora": "10:15",
                 "valor": 450.00,
                 "modalidade": "Crédito Parcelado",
                 "bandeira": "Mastercard",
@@ -217,6 +377,18 @@ _CLIENT_DATABASE = {
                 "codigo_recusa": "96",
                 "motivo_tecnico": "Falha de Comunicação / Timeout da Operadora",
                 "orientacao": "Houve perda de sinal móvel durante o envio da transação. É necessário reiniciar a maquininha ou reposicionar em local com melhor cobertura celular."
+            },
+            {
+                "id_transacao": "TXN-43980",
+                "data": "2026-09-17",
+                "hora": "14:00",
+                "valor": 890.00,
+                "modalidade": "Crédito à Vista",
+                "bandeira": "Visa",
+                "status": "APROVADA",
+                "codigo_recusa": None,
+                "motivo_tecnico": "Transação autorizada com sucesso",
+                "orientacao": None
             }
         ]
     },
@@ -249,27 +421,92 @@ _CLIENT_DATABASE = {
                 "bobina_status": "Normal"
             }
         ],
-        "vendas_ontem": {
-            "data": "Ontem",
-            "total_bruto": 12800.00,
-            "total_liquido": 12416.00,
-            "quantidade_vendas": 114,
-            "detalhes": [
-                {"tipo": "Crédito", "valor": 8200.00, "taxa_mdr": "2.4%"},
-                {"tipo": "Débito", "valor": 4600.00, "taxa_mdr": "1.2%"}
-            ],
-            "previsao_deposito": "Antecipação Automática contratada: valor líquido de R$ 12.416,00 creditado com sucesso hoje às 10:00 na conta Itaú (Agência 8877, Conta 33221-1)."
-        },
-        "transacoes_recentes": [
+        "historico_financeiro": [
+            {
+                "data": "2026-09-22",
+                "total_bruto": 12800.00,
+                "total_liquido": 12416.00,
+                "quantidade_vendas": 114,
+                "detalhes": [
+                    {"tipo": "Crédito", "valor": 8200.00, "taxa_mdr": "2.4%"},
+                    {"tipo": "Débito", "valor": 4600.00, "taxa_mdr": "1.2%"}
+                ],
+                "prazo_liquidacao": "D+0 (Antecipação Automática)",
+                "previsao_deposito": "Antecipação Automática contratada: valor de R$ 12.416,00 creditado hoje às 10:00 na conta Itaú (Ag: 8877, CC: 33221-1)."
+            },
+            {
+                "data": "2026-09-21",
+                "total_bruto": 10950.00,
+                "total_liquido": 10621.50,
+                "quantidade_vendas": 98,
+                "detalhes": [
+                    {"tipo": "Crédito", "valor": 7100.00, "taxa_mdr": "2.4%"},
+                    {"tipo": "Débito", "valor": 3850.00, "taxa_mdr": "1.2%"}
+                ],
+                "prazo_liquidacao": "D+0 (Antecipação Automática)",
+                "previsao_deposito": "Depositado em 2026-09-21 às 10:00 na conta Itaú (Ag: 8877, CC: 33221-1)."
+            },
+            {
+                "data": "2026-09-20",
+                "total_bruto": 8200.00,
+                "total_liquido": 7956.00,
+                "quantidade_vendas": 73,
+                "detalhes": [
+                    {"tipo": "Crédito", "valor": 5500.00, "taxa_mdr": "2.4%"},
+                    {"tipo": "Débito", "valor": 2700.00, "taxa_mdr": "1.2%"}
+                ],
+                "prazo_liquidacao": "D+0 (Antecipação Automática)",
+                "previsao_deposito": "Depositado em 2026-09-20 às 10:00 na conta Itaú (Ag: 8877, CC: 33221-1)."
+            }
+        ],
+        "transacoes": [
             {
                 "id_transacao": "TXN-50190",
-                "data_hora": "Hoje às 19:40",
+                "data": "2026-09-22",
+                "hora": "19:40",
                 "valor": 340.00,
                 "modalidade": "Crédito",
                 "bandeira": "Visa",
                 "status": "APROVADA",
                 "codigo_recusa": None,
-                "motivo_tecnico": "Transação autorizada com sucesso"
+                "motivo_tecnico": "Transação autorizada com sucesso",
+                "orientacao": None
+            },
+            {
+                "id_transacao": "TXN-50175",
+                "data": "2026-09-22",
+                "hora": "18:10",
+                "valor": 520.00,
+                "modalidade": "Crédito Parcelado",
+                "bandeira": "Mastercard",
+                "status": "AGUARDANDO_APROVACAO",
+                "codigo_recusa": None,
+                "motivo_tecnico": "Aguardando confirmação do banco emissor",
+                "orientacao": "A transação está em análise. Normalmente confirmada em até 2 horas. Não tente reprocessar para evitar duplicidade."
+            },
+            {
+                "id_transacao": "TXN-50160",
+                "data": "2026-09-21",
+                "hora": "22:05",
+                "valor": 95.00,
+                "modalidade": "Débito",
+                "bandeira": "Elo",
+                "status": "RECUSADA",
+                "codigo_recusa": "14",
+                "motivo_tecnico": "Número do Cartão Inválido",
+                "orientacao": "O número de cartão digitado manualmente era inválido. Oriente o cliente a tentar novamente pela aproximação (NFC) ou contato com o chip."
+            },
+            {
+                "id_transacao": "TXN-50140",
+                "data": "2026-09-21",
+                "hora": "20:30",
+                "valor": 780.00,
+                "modalidade": "Crédito",
+                "bandeira": "Amex",
+                "status": "APROVADA",
+                "codigo_recusa": None,
+                "motivo_tecnico": "Transação autorizada com sucesso",
+                "orientacao": None
             }
         ]
     }
@@ -316,29 +553,56 @@ _ticket_sequence = 2000
 
 
 @tool
-def consultar_vendas_e_liquidacao(user_id: str) -> str:
+def consultar_vendas_e_liquidacao(user_id: str, data: Optional[str] = None) -> str:
     """
-    Consulta o extrato de vendas recentes, valores a receber e a previsão exata de depósito
-    bancário para o cliente especificado.
-    Use quando o cliente perguntar quando o dinheiro de vendas será depositado ou sobre recebíveis.
-    
+    Consulta o extrato de vendas e a previsão de depósito bancário do cliente.
+    Quando 'data' não for informada, retorna todos os dias disponíveis no histórico.
+    Quando 'data' for informada (formato YYYY-MM-DD), retorna apenas aquele dia específico.
+    Use quando o cliente perguntar sobre depósito, recebíveis ou histórico de vendas.
+
     Args:
         user_id: Identificador do cliente (ex: 'cliente1988')
+        data: Data específica no formato YYYY-MM-DD (opcional). Se omitida, retorna todo o histórico.
     """
     cliente = _CLIENT_DATABASE.get(user_id)
     if not cliente:
         return f"Cliente com identificador '{user_id}' não localizado na base de credenciamento Getnet."
 
-    vendas = cliente["vendas_ontem"]
+    historico = cliente.get("historico_financeiro", [])
     conta = cliente["conta_bancaria"]
 
-    return (
-        f"📊 Extrato Financeiro - Cliente: {cliente['nome']} (ID: {user_id})\n"
-        f"• Vendas de Ontem: R$ {vendas['total_bruto']:.2f} (Líquido: R$ {vendas['total_liquido']:.2f})\n"
-        f"• Quantidade de Transações: {vendas['quantidade_vendas']}\n"
-        f"• Previsão de Depósito: {vendas['previsao_deposito']}\n"
-        f"• Conta de Liquidação: {conta['banco']}, Ag: {conta['agencia']}, CC: {conta['conta']}"
-    )
+    if not historico:
+        return f"Nenhum histórico financeiro encontrado para o cliente '{user_id}'."
+
+    # Filtra por data específica, se informada
+    if data:
+        registros = [r for r in historico if r["data"] == data]
+        if not registros:
+            datas_disponiveis = ", ".join(r["data"] for r in historico)
+            return (
+                f"Nenhum registro encontrado para a data {data} do cliente '{cliente['nome']}'.\n"
+                f"Datas disponíveis no histórico: {datas_disponiveis}."
+            )
+    else:
+        registros = historico  # Retorna todo o histórico
+
+    linhas = [f"📊 Histórico Financeiro — {cliente['nome']} (ID: {user_id})"]
+    linhas.append(f"Conta de Liquidação: {conta['banco']}, Ag: {conta['agencia']}, CC: {conta['conta']}\n")
+
+    for r in sorted(registros, key=lambda x: x["data"], reverse=True):
+        detalhes_str = " | ".join(
+            f"{d['tipo']}: R$ {d['valor']:.2f} (MDR {d['taxa_mdr']})" for d in r["detalhes"]
+        ) if r["detalhes"] else "Sem movimentações"
+
+        linhas.append(
+            f"📅 Data: {r['data']}\n"
+            f"   Bruto: R$ {r['total_bruto']:.2f} | Líquido: R$ {r['total_liquido']:.2f} | Qtd: {r['quantidade_vendas']} venda(s)\n"
+            f"   Modalidades: {detalhes_str}\n"
+            f"   Prazo: {r['prazo_liquidacao']}\n"
+            f"   {r['previsao_deposito']}"
+        )
+
+    return "\n\n".join(linhas)
 
 
 @tool
@@ -372,32 +636,82 @@ def consultar_status_maquininhas(user_id: str) -> str:
 
 
 @tool
-def consultar_transacoes_e_erros(user_id: str) -> str:
+def consultar_transacoes_e_erros(
+    user_id: str,
+    id_transacao: Optional[str] = None,
+    status: Optional[str] = None,
+    data: Optional[str] = None,
+) -> str:
     """
-    Consulta o histórico das últimas transações do cliente, detalhando tentativas recusadas,
-    códigos de erro retornados pela adquirente (ex: erro 51, erro 05) e orientação técnica.
-    Use quando o cliente informar que a maquininha está recusando transações.
-    
+    Consulta o histórico de transações do cliente com filtragem flexível.
+    - Sem filtros: retorna todas as transações disponíveis.
+    - Com 'id_transacao': busca diretamente aquela transação específica.
+    - Com 'status': filtra por estado (APROVADA, RECUSADA, AGUARDANDO_APROVACAO, CANCELADA, ESTORNADA).
+    - Com 'data' (YYYY-MM-DD): filtra transações daquele dia.
+    Os filtros podem ser combinados.
+    Use quando o cliente informar que a maquininha está recusando transações ou quiser consultar uma transação.
+
     Args:
         user_id: Identificador do cliente (ex: 'cliente1988')
+        id_transacao: ID específico da transação (ex: 'TXN-99821'). Opcional.
+        status: Filtro de status (ex: 'RECUSADA'). Opcional.
+        data: Data no formato YYYY-MM-DD. Opcional.
     """
     cliente = _CLIENT_DATABASE.get(user_id)
     if not cliente:
         return f"Cliente com identificador '{user_id}' não localizado."
 
-    transacoes = cliente.get("transacoes_recentes", [])
+    transacoes = cliente.get("transacoes", [])
     if not transacoes:
-        return f"Nenhuma transação recente encontrada para o cliente '{user_id}'."
+        return f"Nenhuma transação encontrada para o cliente '{user_id}'."
 
-    linhas = [f"📑 Últimas Transações do Cliente: {cliente['nome']}"]
-    for t in transacoes:
-        status_icon = "❌" if t["status"] == "RECUSADA" else "✅"
-        recusa_info = f" (Código {t['codigo_recusa']}: {t['motivo_tecnico']})" if t["codigo_recusa"] else ""
+    # Aplica filtros progressivamente
+    resultado = transacoes
+
+    if id_transacao:
+        resultado = [t for t in resultado if t["id_transacao"].lower() == id_transacao.strip().lower()]
+        if not resultado:
+            return f"Transação '{id_transacao}' não encontrada para o cliente '{cliente['nome']}'."
+
+    if status:
+        resultado = [t for t in resultado if t["status"].upper() == status.strip().upper()]
+
+    if data:
+        resultado = [t for t in resultado if t["data"] == data]
+
+    if not resultado:
+        filtros_usados = []
+        if status:
+            filtros_usados.append(f"status={status}")
+        if data:
+            filtros_usados.append(f"data={data}")
+        return (
+            f"Nenhuma transação encontrada para o cliente '{cliente['nome']}' "
+            f"com os filtros: {', '.join(filtros_usados) or 'nenhum'}."
+        )
+
+    # Ordenar por data e hora (mais recente primeiro)
+    resultado = sorted(resultado, key=lambda t: (t["data"], t["hora"]), reverse=True)
+
+    linhas = [f"📑 Transações — {cliente['nome']} (ID: {user_id}) | Total encontrado: {len(resultado)}"]
+
+    for t in resultado:
+        status_icon = {
+            "APROVADA": "✅",
+            "RECUSADA": "❌",
+            "AGUARDANDO_APROVACAO": "⏳",
+            "CANCELADA": "🚫",
+            "ESTORNADA": "↩️",
+        }.get(t["status"], "•")
+
+        recusa_info = f" — Código {t['codigo_recusa']}: {t['motivo_tecnico']}" if t["codigo_recusa"] else f" — {t['motivo_tecnico']}"
+        orientacao_str = f"\n   Orientação: {t['orientacao']}" if t.get("orientacao") else ""
+
         linhas.append(
-            f"{status_icon} Transação {t['id_transacao']} - {t['data_hora']}\n"
-            f"   Valor: R$ {t['valor']:.2f} ({t['modalidade']} - {t['bandeira']})\n"
-            f"   Status: {t['status']}{recusa_info}\n"
-            f"   Orientação: {t['orientacao'] if t.get('orientacao') else 'N/A'}"
+            f"{status_icon} [{t['status']}] {t['id_transacao']} — {t['data']} às {t['hora']}\n"
+            f"   Valor: R$ {t['valor']:.2f} ({t['modalidade']} — {t['bandeira']})"
+            f"{recusa_info}"
+            f"{orientacao_str}"
         )
 
     return "\n\n".join(linhas)
