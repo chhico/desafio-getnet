@@ -37,3 +37,11 @@ bds/
 dist/
 build/
 *.egg-info/
+Preços e tarifas para TPA _ Getnet.pdf
+Tarifa básica.pdf
+Tarifa plana.pdf
+Tarifa premium.pdf
+tests/reports/relatorio_testes_50.json
+tests/reports/relatorio_testes_50.md
+tests/reports/relatorio_testes_v2_50.json
+tests/reports/relatorio_testes_v2_50.md
