@@ -124,7 +124,6 @@ def consultar_base_web_getnet(query: str, max_subpaginas: int = 3) -> str:
                 for raw_link in found_links:
                     link = urljoin(root_url, raw_link).split("#")[0].rstrip("/")
                     parsed = urlparse(link)
-                    #if parsed.netloc == domain and (parsed.path.startswith(base_path) or not base_path):
                     if parsed.netloc == domain or not base_path:
                         if link not in visited_in_domain and not any(ext in link.lower() for ext in [".png", ".jpg", ".pdf", ".zip", ".css", ".js"]):
                             # Pontua relevância do link com base nas palavras da query

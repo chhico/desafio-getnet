@@ -7,6 +7,8 @@ extrai o texto limpo, calcula hash MD5 e atualiza o ChromaDB incrementalmente.
 """
 
 import os
+import re
+import base64
 import hashlib
 import logging
 import sqlite3
@@ -78,10 +80,10 @@ def check_all_urls_have_records(urls: Optional[List[str]] = None, db_path: Optio
 
     for root_url in urls:
         norm = root_url.strip().rstrip("/")
-        # Checa se a URL exata ou alguma subpágina foi indexada
+        # Checa se a URL exata ou alguma subpágina (por barra ou hífen) foi indexada
         cursor.execute(
-            "SELECT 1 FROM url_sync_hashes WHERE url = ? OR url = ? OR url LIKE ? LIMIT 1",
-            (norm, norm + "/", norm + "/%")
+            "SELECT 1 FROM url_sync_hashes WHERE url = ? OR url = ? OR url LIKE ? OR url LIKE ? LIMIT 1",
+            (norm, norm + "/", norm + "/%", norm + "-%")
         )
         if cursor.fetchone() is None:
             missing_urls.append(root_url)
@@ -92,7 +94,6 @@ def check_all_urls_have_records(urls: Optional[List[str]] = None, db_path: Optio
 
 def clean_html(html_content: str) -> str:
     """Extrai texto legível de HTML, eliminando scripts, estilos e tags."""
-    import re
     if BeautifulSoup is not None:
         try:
             soup = BeautifulSoup(html_content, "html.parser")
@@ -111,14 +112,117 @@ def clean_html(html_content: str) -> str:
     return clean_text
 
 
+IGNORED_EXTENSIONS = (
+    ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico",
+    ".pdf", ".zip", ".tar", ".gz", ".rar",
+    ".css", ".js", ".json", ".xml",
+    ".woff", ".woff2", ".ttf", ".eot", ".mp4", ".mp3"
+)
+
+
+def extract_links_from_html(html_content: str, base_path: str = "") -> Set[str]:
+    """
+    Extrai links de:
+    1. Tags <a> estáticas tradicionais (SSR / HTML clássico).
+    2. Scripts dinâmicos com Data URI em Base64 (usados em portais como o Getnet /get-ajuda).
+    3. Scripts inline contendo URLs ou definições de rotas em JSON.
+    """
+    found_links: Set[str] = set()
+
+    # 1. Tags <a> tradicionais (HTML estático)
+    if BeautifulSoup is not None:
+        try:
+            soup = BeautifulSoup(html_content, "html.parser")
+            for a in soup.find_all("a", href=True):
+                href = a["href"].strip()
+                if href and not href.startswith(("javascript:", "mailto:", "tel:", "#")):
+                    found_links.add(href)
+        except Exception:
+            pass
+
+    if not found_links:
+        for m in re.findall(r'href=[\'"]?([^\'" >]+)', html_content):
+            if not m.startswith(("javascript:", "mailto:", "tel:", "#")):
+                found_links.add(m)
+
+    # 2. Scripts com Data URI em Base64 (ex: data:text/javascript;base64,...)
+    b64_scripts = re.findall(
+        r'src=["\']data:(?:text|application)/(?:javascript|x-javascript);base64,([^"\']+)["\']',
+        html_content,
+        re.IGNORECASE
+    )
+    for b64 in b64_scripts:
+        try:
+            decoded = base64.b64decode(b64).decode("utf-8", errors="ignore")
+            # Extrai URLs de propriedades comuns (ex: link: "...", btnLink: "...", href: "...")
+            for link in re.findall(r'(?:link|btnLink|href|url)\s*:\s*["\']([^"\']+)["\']', decoded):
+                if link and not link.startswith(("javascript:", "mailto:", "tel:", "#")):
+                    found_links.add(link)
+
+            # Extrai caminhos que correspondam ao base_path (ou padrão /get-ajuda)
+            clean_bp = base_path.strip("/") if base_path else "get-ajuda"
+            for p in re.findall(rf'["\'](/(?:{re.escape(clean_bp)}[^\s"\'#]*))["\']', decoded):
+                found_links.add(p)
+        except Exception:
+            pass
+
+    # 3. Scripts inline normais (<script>...</script>)
+    inline_scripts = re.findall(r'<script[^>]*>(.*?)</script>', html_content, flags=re.DOTALL | re.IGNORECASE)
+    for script_body in inline_scripts:
+        if "link" in script_body or (base_path and base_path in script_body):
+            for link in re.findall(r'(?:link|btnLink|href|url)\s*:\s*["\']([^"\']+)["\']', script_body):
+                if link and not link.startswith(("javascript:", "mailto:", "tel:", "#")):
+                    found_links.add(link)
+            clean_bp = base_path.strip("/") if base_path else "get-ajuda"
+            for p in re.findall(rf'["\'](/(?:{re.escape(clean_bp)}[^\s"\'#]*))["\']', script_body):
+                found_links.add(p)
+
+    return found_links
+
+
+def is_url_in_scope(target_url: str, root_domain: str, base_path: str) -> bool:
+    """
+    Verifica se a URL pertence ao mesmo domínio e está dentro do escopo da URL raiz.
+    Aceita:
+    - Mesma rota exata (ex: /get-ajuda)
+    - Subpastas convencionais (ex: /pt/suporte/faq)
+    - Rotas hifenizadas no padrão Getnet (ex: /get-ajuda-receba-ja/artigo)
+    """
+    parsed = urlparse(target_url)
+    if parsed.netloc != root_domain:
+        return False
+
+    if not base_path:
+        return True
+
+    clean_path = parsed.path.rstrip("/")
+    clean_base = base_path.rstrip("/")
+
+    # 1. Correspondência exata
+    if clean_path == clean_base:
+        return True
+    # 2. Subpasta hierárquica (ex: base=/pt/suporte -> /pt/suporte/artigo)
+    if clean_path.startswith(clean_base + "/"):
+        return True
+    # 3. Prefixo hifenizado (ex: base=/get-ajuda -> /get-ajuda-receba-ja)
+    if clean_path.startswith(clean_base + "-"):
+        return True
+
+    return False
+
+
 def crawl_recursive(
     base_urls: List[str], 
     max_depth: int = 2, 
-    max_pages_per_domain: int = 20
+    max_pages_per_domain: Optional[int] = None
 ) -> List[Document]:
     """
     Rastreia recursivamente as URLs base e suas subpáginas filhas.
+    Suporta tanto hierarquia de diretórios clássica quanto rotas dinâmicas/hifenizadas.
     """
+    if max_pages_per_domain is None:
+        max_pages_per_domain = getattr(settings, "RAG_CRAWLER_MAX_PAGES", 50)
+
     documents: List[Document] = []
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -136,7 +240,10 @@ def crawl_recursive(
         visited: Set[str] = set()
         queue: List[tuple[str, int]] = [(root_url, 0)]
 
-        logger.info(f"[Crawler] Iniciando varredura a partir de: {root_url} (Profundidade max: {max_depth})")
+        logger.info(
+            f"[Crawler] Iniciando varredura a partir de: {root_url} "
+            f"(Profundidade max: {max_depth}, Limite de páginas: {max_pages_per_domain})"
+        )
 
         while queue and len(visited) < max_pages_per_domain:
             current_url, depth = queue.pop(0)
@@ -168,25 +275,18 @@ def crawl_recursive(
 
                 # Se não atingiu profundidade máxima, descobre links filhos do mesmo domínio e subcaminho
                 if depth < max_depth:
-                    found_links = []
-                    if BeautifulSoup is not None:
-                        try:
-                            soup = BeautifulSoup(resp.text, "html.parser")
-                            found_links = [a["href"] for a in soup.find_all("a", href=True)]
-                        except Exception:
-                            pass
-                    
-                    if not found_links:
-                        import re
-                        found_links = re.findall(r'href=[\'"]?([^\'" >]+)', resp.text)
+                    found_links = extract_links_from_html(resp.text, base_path=base_path)
 
                     for raw_link in found_links:
                         link = urljoin(current_url, raw_link).split("#")[0].rstrip("/")
+                        if not link or link in visited:
+                            continue
+
                         parsed_link = urlparse(link)
                         
-                        # Garante que pertence ao mesmo domínio e começa no mesmo caminho
-                        if parsed_link.netloc == domain and (parsed_link.path.startswith(base_path) or not base_path):
-                            if link not in visited and not any(ext in link.lower() for ext in [".png", ".jpg", ".pdf", ".zip", ".css", ".js"]):
+                        # Garante que pertence ao mesmo domínio e escopo (subpasta ou prefixo com hífen)
+                        if is_url_in_scope(link, domain, base_path):
+                            if not any(parsed_link.path.lower().endswith(ext) for ext in IGNORED_EXTENSIONS):
                                 queue.append((link, depth + 1))
 
             except Exception as e:
@@ -209,6 +309,7 @@ def sync_urls_to_vectorstore(vectorstore, force_refresh: bool = False) -> int:
         urls = list(raw_urls)
 
     max_depth = getattr(settings, "RAG_CRAWLER_MAX_DEPTH", 2)
+    max_pages = getattr(settings, "RAG_CRAWLER_MAX_PAGES", 50)
 
     all_present, missing_urls = check_all_urls_have_records(urls)
     effective_force = force_refresh
@@ -221,8 +322,8 @@ def sync_urls_to_vectorstore(vectorstore, force_refresh: bool = False) -> int:
     elif force_refresh:
         logger.info("[Crawler Sync] Sincronização forçada (force=True). Reprocessando todas as URLs e subpáginas...")
 
-    logger.info(f"[Crawler Sync] Rastreando {len(urls)} URLs configuradas...")
-    docs = crawl_recursive(urls, max_depth=max_depth)
+    logger.info(f"[Crawler Sync] Rastreando {len(urls)} URLs configuradas (max_depth={max_depth}, max_pages={max_pages})...")
+    docs = crawl_recursive(urls, max_depth=max_depth, max_pages_per_domain=max_pages)
 
     if not docs:
         logger.info("[Crawler Sync] Nenhuma página encontrada ou rede inacessível.")

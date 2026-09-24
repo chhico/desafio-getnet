@@ -8,18 +8,13 @@ e utiliza busca web externa para perguntas de uso geral.
 
 from langchain_core.messages import SystemMessage
 from langchain_core.runnables import RunnableConfig
-from langchain_openai import ChatOpenAI
-from langgraph.prebuilt import ToolNode
 
 from backend.agents.state import SupportState
-from backend.core.config import settings
+from backend.agents.agent_utils import run_agent_with_tools
 from backend.agents.tools.knowledge_tools import KNOWLEDGE_TOOLS
+from backend.core.llm_factory import get_agent_llm
 
-llm = ChatOpenAI(
-    model=settings.AGENT_MODEL,
-    temperature=0,
-    api_key=settings.OPENAI_API_KEY,
-)
+llm = get_agent_llm(temperature=0)
 llm_with_tools = llm.bind_tools(KNOWLEDGE_TOOLS)
 
 SYSTEM_PROMPT = """Você é o Agente de Conhecimento (Knowledge Agent) oficial da Getnet.
@@ -56,21 +51,12 @@ OBRIGATÓRIO — IDENTIFICAÇÃO E CITAÇÃO DAS FONTES:
 def knowledge_node(state: SupportState, config: RunnableConfig) -> dict:
     """Nó do Agente de Conhecimento."""
     messages = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
-    response = llm_with_tools.invoke(messages)
-
-    updated_messages = [response]
-    current_messages = messages + [response]
-
-    while hasattr(response, "tool_calls") and response.tool_calls:
-        tool_results = ToolNode(KNOWLEDGE_TOOLS).invoke({"messages": current_messages})
-        tool_messages = tool_results["messages"]
-        updated_messages.extend(tool_messages)
-        current_messages.extend(tool_messages)
-        response = llm_with_tools.invoke(current_messages)
-        updated_messages.append(response)
-        current_messages.append(response)
-
-    response.name = "knowledge"
+    updated_messages = run_agent_with_tools(
+        llm_with_tools=llm_with_tools,
+        tools=KNOWLEDGE_TOOLS,
+        messages=messages,
+        agent_name="knowledge",
+    )
     return {
         "messages": updated_messages,
         "next_agent": "knowledge",
