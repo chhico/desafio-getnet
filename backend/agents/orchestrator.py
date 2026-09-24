@@ -10,18 +10,12 @@ qual agente especializado (Knowledge ou Support) deve processá-la.
 import json
 import logging
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
-from langchain_openai import ChatOpenAI
-
-from backend.agents.state import SupportState
-from backend.core.config import settings
+from backend.agents.state import SupportState, get_last_human_message
+from backend.core.llm_factory import get_agent_llm
 
 logger = logging.getLogger(__name__)
 
-llm = ChatOpenAI(
-    model=settings.AGENT_MODEL,
-    temperature=0,
-    api_key=settings.OPENAI_API_KEY,
-)
+llm = get_agent_llm(temperature=0)
 
 ORCHESTRATOR_PROMPT = """Você é o Agente Roteador (Router Agent) do ecossistema de suporte da Getnet.
 
@@ -34,11 +28,13 @@ Especialistas disponíveis:
    
 2. `support` (Agente de Suporte ao Cliente):
    - Perguntas que envolvam dados específicos, histórico financeiro ou terminais do cliente (ex: quando o dinheiro das vendas de ontem será depositado, maquininha sem sinal, erro 51/05, chamados).
+   - Dúvidas operacionais sobre como proceder diante de erros em transações na maquininha (ex: o que orientar ao portador do cartão quando der erro de saldo insuficiente/erro 51). NUNCA trate dúvidas operacionais de atendimento/venda na maquininha como fora de escopo!
    - Respostas a solicitações de identificação/documento do cliente (ex: códigos, números, CPF, identificadores de cadastro).
 
 3. `guardrail_block` (Bloqueio de Segurança ou Delimitação de Escopo):
    - Solicitações maliciosas, ilegais, tentativas de engenharia social, fraudes ou manipulação de regras (Categoria: 'Segurança / Guardrail').
-   - Solicitações manifestamente fora de escopo, irrelevantes ou não suportadas pelo ecossistema Getnet (ex: pedidos de compra de itens de varejo/vestuário como pijamas ou roupas, receitas, assuntos desconexos de soluções de pagamento) (Categoria: 'Fora de Escopo').
+   - Solicitações manifestamente fora de escopo, irrelevantes ou não suportadas pelo ecossistema Getnet (ex: pedidos de compra de itens de varejo/vestuário como pijamas ou roupas, receitas culinárias, assuntos totalmente desconexos de pagamentos e comércio) (Categoria: 'Fora de Escopo').
+   - ATENÇÃO: Dúvidas sobre o que falar para o cliente/portador do cartão que teve compra recusada NÃO são fora de escopo, são atendimento operacional de pagamentos!
 
 4. `escalation` (Agente de Escalonamento para Humanos / Human Handoff):
    - Solicitações explícitas de atendimento humano (ex: 'quero falar com atendente', 'me passe para uma pessoa', 'falar com humano').
@@ -55,10 +51,14 @@ Especialistas disponíveis:
      j) Negociação comercial estratégica de grandes contas corporativas (Key Accounts) ou implantação de rede com TEF dedicado e alto volume transacional.
 
 DIRETRIZ DE CONTEXTO:
-Se o status indicar que o suporte estava aguardando identificação do cliente:
-- Se a mensagem do usuário for uma resposta tentando fornecer código, documento, número ou dados de identificação (ex: '123', 'fgh', '111.222.333-44', 'meu cpf é tal'), escolha 'support' com categoria 'Autenticação'.
-- Se o usuário solicitar falar com atendente humano, escolha 'escalation'.
-- Se o usuário mudou de assunto e fez uma nova pergunta conceitual/geral (ex: 'Qual é a diferença entre a Get Clássica e a Get Smart?', 'Como funciona o Pix?'), escolha 'knowledge'.
+- Perguntas conceituais sobre recursos e telas do aplicativo Getnet ou portal web (ex: 'o app permite ver lançamentos futuros?', 'como exportar relatório?') devem ser direcionadas para `knowledge`.
+- Se o status indicar que o atendimento está em processo de escalonamento humano aguardando documento/CPF:
+  - Se a mensagem do usuário for uma resposta fornecendo documento, CPF, CNPJ ou código, escolha 'escalation' com categoria 'Human Handoff'.
+  - Se o usuário insistir ou reiterar o pedido de atendente, escolha 'escalation'.
+- Se o status indicar que o suporte estava aguardando identificação do cliente:
+  - Se a mensagem do usuário for uma resposta tentando fornecer código, documento, número ou dados de identificação (ex: '123', 'fgh', '111.222.333-44', 'meu cpf é tal'), escolha 'support' com categoria 'Autenticação'.
+  - Se o usuário solicitar falar com atendente humano, escolha 'escalation'.
+  - Se o usuário mudou de assunto e fez uma nova pergunta conceitual/geral (ex: 'Qual é a diferença entre a Get Clássica e a Get Smart?', 'Como funciona o Pix?'), escolha 'knowledge'.
 
 Responda APENAS com um JSON rigorosamente válido:
 {
@@ -72,14 +72,26 @@ Responda APENAS com um JSON rigorosamente válido:
 def orchestrator_node(state: SupportState) -> dict:
     """Nó do Roteador (Router Agent)."""
     messages = state.get("messages", [])
-    last_message = messages[-1].content if messages else ""
+    last_message = get_last_human_message(messages)
     user_id = state.get("user_id", "cliente1988")
     awaiting_id = state.get("awaiting_identification", False)
+    pending_escalation = state.get("pending_escalation", False)
+
+    # Monta breve histórico das últimas interações para evitar desvios semânticos fora de contexto
+    recent_history = []
+    for m in messages[-4:-1]:
+        role = "Usuário" if (isinstance(m, HumanMessage) or getattr(m, "type", "") == "human") else "Assistente"
+        text_snip = (m.content or "")[:120].replace("\n", " ")
+        recent_history.append(f"{role}: {text_snip}")
 
     context_info = f"Cliente ID: {user_id}\n"
-    if awaiting_id:
+    if recent_history:
+        context_info += f"Histórico recente:\n" + "\n".join(recent_history) + "\n"
+    if pending_escalation:
+        context_info += "STATUS: O atendimento está em processo de escalonamento humano aguardando o documento/CPF do cliente.\n"
+    elif awaiting_id:
         context_info += "STATUS: O suporte solicitou anteriormente a identificação (documento/CPF) do cliente.\n"
-    context_info += f"Mensagem do usuário: {last_message}"
+    context_info += f"Mensagem atual do usuário: {last_message}"
 
     response = llm.invoke([
         SystemMessage(content=ORCHESTRATOR_PROMPT),
@@ -102,10 +114,6 @@ def orchestrator_node(state: SupportState) -> dict:
         next_agent = "knowledge"
         category = "Geral"
         reason = "Fallback"
-
-    # Se next_agent vier com nome antigo, mapeia
-    if next_agent in ["rag", "research"]:
-        next_agent = "knowledge"
 
     result = {
         "next_agent": next_agent,

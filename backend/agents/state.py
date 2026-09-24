@@ -6,10 +6,21 @@ Estado compartilhado (SupportState) utilizado pelo grafo LangGraph.
 
 from typing import Annotated, Literal, Optional
 from typing_extensions import TypedDict
+from langchain_core.messages import HumanMessage
 from langgraph.graph.message import add_messages
 
 # Tipos de agentes especialistas suportados (4 Agentes + Guardrail)
 AgentType = Literal["knowledge", "support", "guardrail_block", "escalation"]
+
+
+def get_last_human_message(messages: list) -> str:
+    """
+    Recupera o conteúdo textual da última mensagem enviada pelo usuário no histórico.
+    """
+    for m in reversed(messages or []):
+        if isinstance(m, HumanMessage) or (hasattr(m, "type") and m.type == "human"):
+            return (m.content or "").strip()
+    return ""
 
 
 class SupportState(TypedDict):
@@ -46,6 +57,7 @@ class SupportState(TypedDict):
     ticket_protocol: str | None
     summary_for_human: str | None
     queue_target: str | None
+    pending_escalation: bool | None
 
     # Observabilidade / Rastreabilidade de Ferramentas
     tools_used: list[str] | None

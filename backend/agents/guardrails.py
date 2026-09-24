@@ -11,8 +11,8 @@ Atende ao requisito do edital de detecção e tratamento de requisições:
 import re
 import logging
 from typing import Tuple
-from langchain_core.messages import AIMessage, HumanMessage
-from backend.agents.state import SupportState
+from langchain_core.messages import AIMessage
+from backend.agents.state import SupportState, get_last_human_message
 
 logger = logging.getLogger(__name__)
 
@@ -98,11 +98,7 @@ def guardrail_node(state: SupportState) -> dict:
     Valida a última mensagem do usuário antes que ela alcance os agentes.
     """
     messages = state.get("messages", [])
-    last_user_message = ""
-    for m in reversed(messages):
-        if isinstance(m, HumanMessage) or (hasattr(m, "type") and m.type == "human"):
-            last_user_message = m.content.strip()
-            break
+    last_user_message = get_last_human_message(messages)
 
     is_safe, reason = check_input_safety(last_user_message)
 
