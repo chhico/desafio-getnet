@@ -7,6 +7,7 @@ atendendo aos cenários de teste oficiais da Getnet.
 """
 
 from typing import Optional
+from datetime import datetime
 from langchain_core.tools import tool
 
 # ---------------------------------------------------------------------------
@@ -140,6 +141,19 @@ _CLIENT_DATABASE = {
                 "motivo_tecnico": "Estorno solicitado pelo estabelecimento",
                 "orientacao": "O valor foi estornado ao portador dentro do prazo previsto. Nenhuma ação adicional necessária."
             }
+        ],
+        "chamados": [
+            {
+                "protocolo": "GET-2026-8819",
+                "tipo": "Visita Técnica para Troca de POS",
+                "motivo": "Leitor de chip da Get Clássica danificado",
+                "data_abertura": "2026-09-16",
+                "status": "AGENDADO",
+                "data_agendamento": "2026-09-25",
+                "periodo": "Tarde (13h às 18h)",
+                "tecnico_responsavel": "Marcos Oliveira",
+                "observacoes": "Visita técnica confirmada. Técnico levará terminal Get Clássica novo para substituição no local. Permite reagendamento para o período da manhã mediante aviso prévio."
+            }
         ]
     },
     "cliente2024": {
@@ -234,6 +248,19 @@ _CLIENT_DATABASE = {
                 "motivo_tecnico": "Transação autorizada com sucesso",
                 "orientacao": None
             }
+        ],
+        "chamados": [
+            {
+                "protocolo": "GET-2026-7740",
+                "tipo": "Envio de Suprimentos / Bobinas",
+                "motivo": "Solicitação de pacote de bobinas térmicas de 57mm para Get Clássica",
+                "data_abertura": "2026-09-20",
+                "status": "EM_TRANSITO",
+                "data_agendamento": None,
+                "periodo": None,
+                "tecnico_responsavel": None,
+                "observacoes": "Pacote despachado via Correios (Rastreio: QB123456789BR). Previsão de entrega em 2 dias úteis."
+            }
         ]
     },
     "cliente3030": {
@@ -320,7 +347,8 @@ _CLIENT_DATABASE = {
                 "motivo_tecnico": "Aguardando confirmação do banco emissor",
                 "orientacao": "A transação está em análise pelo banco emissor. Normalmente confirmada em até 2 horas. Não tente reprocessar para evitar duplicidade."
             }
-        ]
+        ],
+        "chamados": []
     },
     "cliente4040": {
         "cpf": "444.555.666-77",
@@ -389,6 +417,19 @@ _CLIENT_DATABASE = {
                 "codigo_recusa": None,
                 "motivo_tecnico": "Transação autorizada com sucesso",
                 "orientacao": None
+            }
+        ],
+        "chamados": [
+            {
+                "protocolo": "GET-2026-5512",
+                "tipo": "Suporte de Conectividade",
+                "motivo": "Chip 3G Tim sem sinal há 3 dias na Get Clássica (POS-4410)",
+                "data_abertura": "2026-09-19",
+                "status": "PENDENTE_CLIENTE",
+                "data_agendamento": None,
+                "periodo": None,
+                "tecnico_responsavel": None,
+                "observacoes": "Aguardando confirmação de endereço para envio de novo chip 4G multi-operadora."
             }
         ]
     },
@@ -508,7 +549,8 @@ _CLIENT_DATABASE = {
                 "motivo_tecnico": "Transação autorizada com sucesso",
                 "orientacao": None
             }
-        ]
+        ],
+        "chamados": []
     }
 }
 
@@ -718,6 +760,80 @@ def consultar_transacoes_e_erros(
 
 
 @tool
+def consultar_chamados_suporte(
+    user_id: str,
+    protocolo: Optional[str] = None,
+) -> str:
+    """
+    Consulta o histórico e status de chamados técnicos, ordens de serviço, visitas agendadas e solicitações de manutenção abertas pelo cliente.
+    Use SEMPRE que o cliente perguntar sobre status de chamados anteriores, agendamento de visita técnica,
+    reagendamento de visita, troca de máquina ou solicitações de suporte em andamento.
+
+    Args:
+        user_id: Identificador do cliente (ex: 'cliente1988').
+        protocolo: Número de protocolo opcional para consulta pontual de chamado específico (ex: 'GET-2026-8819').
+    """
+    if user_id not in _CLIENT_DATABASE:
+        return f"Erro: Cliente '{user_id}' não encontrado na base de dados de suporte."
+
+    cliente = _CLIENT_DATABASE[user_id]
+    chamados = cliente.get("chamados", [])
+
+    if not chamados:
+        return (
+            f"📋 Consulta de Chamados — {cliente['nome']} ({user_id})\n"
+            f"Nenhum chamado técnico ou ordem de serviço encontrada em aberto para este cadastro."
+        )
+
+    # Filtro por protocolo se especificado
+    if protocolo:
+        prot_clean = protocolo.strip().upper()
+        chamados_filtrados = [
+            c for c in chamados
+            if prot_clean in c.get("protocolo", "").upper()
+        ]
+        if not chamados_filtrados:
+            return (
+                f"Chamado com protocolo '{protocolo}' não localizado para o cliente {cliente['nome']} ({user_id}).\n"
+                f"Total de chamados ativos encontrados no cadastro: {len(chamados)}."
+            )
+        chamados = chamados_filtrados
+
+    linhas = [
+        f"📋 Consulta de Chamados e Ordens de Serviço — {cliente['nome']} ({user_id})\n"
+        f"Total de chamados localizados: {len(chamados)}\n"
+        f"{'-' * 60}"
+    ]
+
+    for ch in chamados:
+        status_icon = (
+            "🟢" if ch.get("status") in ["CONCLUIDO", "RESOLVIDO"]
+            else "🟡" if ch.get("status") in ["AGENDADO", "EM_TRANSITO"]
+            else "🔵"
+        )
+        agendamento_info = ""
+        if ch.get("data_agendamento"):
+            agendamento_info = (
+                f"\n   📅 Visita Técnica Agendada: {ch.get('data_agendamento')} — Período: {ch.get('periodo', 'Comercial')}"
+            )
+        if ch.get("tecnico_responsavel"):
+            agendamento_info += f" (Técnico: {ch.get('tecnico_responsavel')})"
+
+        obs_info = f"\n   ℹ️ Observações: {ch.get('observacoes')}" if ch.get("observacoes") else ""
+
+        linhas.append(
+            f"{status_icon} Protocolo: {ch.get('protocolo')} | Status: {ch.get('status')}\n"
+            f"   Tipo: {ch.get('tipo')}\n"
+            f"   Motivo: {ch.get('motivo')}\n"
+            f"   Data de Abertura: {ch.get('data_abertura')}"
+            f"{agendamento_info}"
+            f"{obs_info}"
+        )
+
+    return "\n\n".join(linhas)
+
+
+@tool
 def abrir_chamado_suporte(
     user_id: str,
     motivo: str,
@@ -732,14 +848,35 @@ def abrir_chamado_suporte(
         motivo: Descrição clara do problema técnico ou solicitação
         prioridade: 'baixa', 'normal' ou 'alta'
     """
+    if not user_id or user_id not in _CLIENT_DATABASE:
+        return (
+            f"❌ Não foi possível registrar o chamado técnico: cliente '{user_id}' não identificado ou não localizado na base Getnet.\n"
+            f"Por favor, solicite a identificação do cliente (CPF/CNPJ) antes de prosseguir com a abertura do chamado."
+        )
+
     global _ticket_sequence
     _ticket_sequence += 1
     ticket_id = f"GET-{_ticket_sequence}"
 
+    # Registra no histórico do cliente na memória simulada
+    novo_chamado = {
+        "protocolo": ticket_id,
+        "tipo": "Chamado Técnico",
+        "motivo": motivo,
+        "data_abertura": datetime.now().strftime("%Y-%m-%d"),
+        "status": "ABERTO",
+        "data_agendamento": None,
+        "periodo": None,
+        "tecnico_responsavel": None,
+        "observacoes": f"Chamado registrado com prioridade {prioridade.upper()}. Prazo de atendimento em até 24 horas úteis."
+    }
+    _CLIENT_DATABASE[user_id].setdefault("chamados", []).append(novo_chamado)
+
+    nome_cliente = _CLIENT_DATABASE[user_id].get("nome", user_id)
     return (
         f"✅ Chamado Técnico Getnet Registrado com Sucesso!\n"
         f"• Protocolo: {ticket_id}\n"
-        f"• Cliente: {user_id}\n"
+        f"• Cliente: {nome_cliente} ({user_id})\n"
         f"• Motivo: {motivo}\n"
         f"• Prioridade: {prioridade.upper()}\n"
         f"• Prazo de Atendimento: Até 24 horas úteis."
@@ -750,5 +887,7 @@ SUPPORT_TOOLS = [
     consultar_vendas_e_liquidacao,
     consultar_status_maquininhas,
     consultar_transacoes_e_erros,
+    consultar_chamados_suporte,
     abrir_chamado_suporte,
 ]
+

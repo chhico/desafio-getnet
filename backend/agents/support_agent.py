@@ -10,22 +10,17 @@ e proteção estrita de dados bancários/operacionais.
 
 from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
-from langchain_openai import ChatOpenAI
-from langgraph.prebuilt import ToolNode
 
-from backend.agents.state import SupportState
-from backend.core.config import settings
+from backend.agents.state import SupportState, get_last_human_message
+from backend.agents.agent_utils import run_agent_with_tools
 from backend.agents.tools.support_tools import (
     SUPPORT_TOOLS,
     _CLIENT_DATABASE,
     buscar_cliente_por_documento,
 )
+from backend.core.llm_factory import get_agent_llm
 
-llm = ChatOpenAI(
-    model=settings.AGENT_MODEL,
-    temperature=0,
-    api_key=settings.OPENAI_API_KEY,
-)
+llm = get_agent_llm(temperature=0)
 llm_with_tools = llm.bind_tools(SUPPORT_TOOLS)
 
 SYSTEM_PROMPT = """Você é o Agente de Suporte ao Cliente (Customer Support Agent) da Getnet.
@@ -37,7 +32,8 @@ Ferramentas disponíveis:
 1. `consultar_vendas_e_liquidacao`: use para consultar o extrato financeiro, histórico de vendas por data ou geral, saldo a receber e dados bancários cadastrados do cliente.
 2. `consultar_status_maquininhas`: use para verificar modelos vinculados, número de série, status de conexão (online/offline) e sinal de rede.
 3. `consultar_transacoes_e_erros`: use SEMPRE que o cliente perguntar por transações, seja por ID específico (ex: TXN-00000, TXN-99821), por status (aprovadas, recusadas) ou por data.
-4. `abrir_chamado_suporte`: use para registrar chamado técnico formal quando necessário.
+4. `consultar_chamados_suporte`: use SEMPRE que o cliente perguntar pelo status de chamados técnicos abertos anteriormente, protocolos de suporte, agendamento de visita técnica ou reagendamento de visita de manutenção.
+5. `abrir_chamado_suporte`: use para registrar novo chamado técnico formal quando necessário.
 
 DIRETRIZES DE ATENDIMENTO E ISOLAMENTO DE DADOS:
 - SEMPRE passe o identificador do cliente autenticado `{user_id}` nas ferramentas para consultar sua base de dados exclusiva em `_CLIENT_DATABASE`.
@@ -52,11 +48,7 @@ DIRETRIZES DE ATENDIMENTO E ISOLAMENTO DE DADOS:
 def support_node(state: SupportState, config: RunnableConfig) -> dict:
     """Nó do Agente de Suporte ao Cliente com autenticação por documento e isolamento de sessão."""
     messages = state.get("messages", [])
-    last_user_message = ""
-    for m in reversed(messages):
-        if isinstance(m, HumanMessage) or (hasattr(m, "type") and m.type == "human"):
-            last_user_message = m.content.strip()
-            break
+    last_user_message = get_last_human_message(messages)
 
     authenticated_user_id = state.get("authenticated_user_id")
     awaiting_identification = state.get("awaiting_identification", False)
@@ -94,21 +86,12 @@ def support_node(state: SupportState, config: RunnableConfig) -> dict:
             nome_cliente=client_data["nome"],
         )
         current_messages = [SystemMessage(content=custom_system_prompt)] + messages
-        response = llm_with_tools.invoke(current_messages)
-
-        updated_messages = [response]
-        current_messages.append(response)
-
-        while hasattr(response, "tool_calls") and response.tool_calls:
-            tool_results = ToolNode(SUPPORT_TOOLS).invoke({"messages": current_messages})
-            tool_messages = tool_results["messages"]
-            updated_messages.extend(tool_messages)
-            current_messages.extend(tool_messages)
-            response = llm_with_tools.invoke(current_messages)
-            updated_messages.append(response)
-            current_messages.append(response)
-
-        response.name = "support"
+        updated_messages = run_agent_with_tools(
+            llm_with_tools=llm_with_tools,
+            tools=SUPPORT_TOOLS,
+            messages=current_messages,
+            agent_name="support",
+        )
         return {
             "messages": updated_messages,
             "next_agent": "support",
@@ -143,21 +126,12 @@ def support_node(state: SupportState, config: RunnableConfig) -> dict:
             SystemMessage(content=custom_system_prompt),
             HumanMessage(content=prompt_confirmacao),
         ]
-
-        response = llm_with_tools.invoke(current_messages)
-        updated_messages = [response]
-        current_messages.append(response)
-
-        while hasattr(response, "tool_calls") and response.tool_calls:
-            tool_results = ToolNode(SUPPORT_TOOLS).invoke({"messages": current_messages})
-            tool_messages = tool_results["messages"]
-            updated_messages.extend(tool_messages)
-            current_messages.extend(tool_messages)
-            response = llm_with_tools.invoke(current_messages)
-            updated_messages.append(response)
-            current_messages.append(response)
-
-        response.name = "support"
+        updated_messages = run_agent_with_tools(
+            llm_with_tools=llm_with_tools,
+            tools=SUPPORT_TOOLS,
+            messages=current_messages,
+            agent_name="support",
+        )
         return {
             "messages": updated_messages,
             "next_agent": "support",

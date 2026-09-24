@@ -12,19 +12,14 @@ Responsável por orquestrar a transferência assistida de chamados para operador
 import random
 import logging
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
-from langchain_openai import ChatOpenAI
-
-from backend.agents.state import SupportState
+from backend.agents.state import SupportState, get_last_human_message
 from backend.agents.tools.escalation_tools import abrir_chamado_servicenow, ESCALATION_TOOLS
-from backend.core.config import settings
+from backend.agents.tools.support_tools import _CLIENT_DATABASE, buscar_cliente_por_documento
+from backend.core.llm_factory import get_agent_llm
 
 logger = logging.getLogger(__name__)
 
-llm = ChatOpenAI(
-    model=settings.AGENT_MODEL,
-    temperature=0,
-    api_key=settings.OPENAI_API_KEY,
-)
+llm = get_agent_llm(temperature=0)
 
 ESCALATION_SUMMARY_PROMPT = """Você é o Assistente de Triagem Técnica e Human Handoff da Getnet.
 Sua missão é analisar o histórico da conversa entre o cliente e os agentes automatizados e gerar uma síntese executiva para o operador humano que assumirá o atendimento.
@@ -48,16 +43,69 @@ RESUMO: <resumo objetivo do caso>
 def escalation_node(state: SupportState) -> dict:
     """
     Nó do Agente de Escalonamento para Humanos.
-    Gera o protocolo, sintetiza o caso e formaliza o Human Handoff.
+    Garante que o cliente seja identificado por documento (CPF/CNPJ) antes de abrir o chamado no ServiceNow.
+    Após a identificação, sintetiza o caso, gera protocolo oficial nominal e formaliza o Human Handoff.
     """
     messages = state.get("messages", [])
-    user_id = state.get("user_id", "cliente1988")
+    last_user_message = get_last_human_message(messages)
     authenticated_user = state.get("authenticated_user_id")
+    awaiting_id = state.get("awaiting_identification", False)
 
-    # 1. Geração de Protocolo Oficial Getnet
+    # -----------------------------------------------------------------------
+    # 1. Verificação de Identificação do Cliente (CPF/CNPJ Obrigatório)
+    # -----------------------------------------------------------------------
+    if not authenticated_user or authenticated_user not in _CLIENT_DATABASE:
+        # Tenta identificar o cliente pelo documento informado na mensagem atual
+        busca = buscar_cliente_por_documento(last_user_message)
+        if busca:
+            authenticated_user, client_data = busca
+        else:
+            # Cliente ainda não informou documento válido
+            if awaiting_id:
+                msg_erro = AIMessage(
+                    content=(
+                        f"❌ **Documento não localizado:**\n\n"
+                        f"Não encontramos nenhum cadastro ativo com o documento/identificador informado (`{last_user_message}`).\n\n"
+                        f"Por favor, verifique os dados e informe novamente seu **documento (CPF/CNPJ)** para podermos transferir seu atendimento com segurança."
+                    ),
+                    name="escalation",
+                )
+                return {
+                    "messages": [msg_erro],
+                    "next_agent": "escalation",
+                    "category": "Human Handoff / Escalonamento",
+                    "awaiting_identification": True,
+                    "pending_escalation": True,
+                }
+
+            msg_solicitacao = AIMessage(
+                content=(
+                    "Compreendo a necessidade de atendimento especializado. Para transferir você para o "
+                    "especialista adequado e vincular o protocolo oficial ao seu cadastro com total segurança, "
+                    "por favor confirme seu **documento (CPF ou CNPJ)**:"
+                ),
+                name="escalation",
+            )
+            return {
+                "messages": [msg_solicitacao],
+                "next_agent": "escalation",
+                "category": "Human Handoff / Escalonamento",
+                "routing_reason": "Solicitação de identificação prévia para abertura de chamado nominal no ServiceNow",
+                "awaiting_identification": True,
+                "pending_escalation": True,
+            }
+
+    # -----------------------------------------------------------------------
+    # 2. Cliente devidamente identificado! Recupera os dados cadastrais
+    # -----------------------------------------------------------------------
+    client_data = _CLIENT_DATABASE[authenticated_user]
+    nome_cliente = client_data.get("nome", authenticated_user)
+    cnpj_cpf = client_data.get("cnpj") or client_data.get("cpf", "N/A")
+
+    # 3. Geração de Protocolo Oficial Getnet
     protocol = f"GET-2026-{random.randint(1000, 9999)}"
 
-    # 2. Consolidação do histórico textual da conversa
+    # 4. Consolidação do histórico textual da conversa
     history_lines = []
     for m in messages:
         sender = "Usuário" if (isinstance(m, HumanMessage) or getattr(m, "type", "") == "human") else "Assistente"
@@ -65,13 +113,13 @@ def escalation_node(state: SupportState) -> dict:
         history_lines.append(f"{sender}: {content}")
     history_text = "\n".join(history_lines[-8:])  # últimos turnos relevantes
 
-    # 3. Sumarização via LLM para a equipe humana
+    # 5. Sumarização via LLM para a equipe humana
     queue_target = "Suporte Técnico N2 - Terminais"
     summary_text = "Solicitação de atendimento transferida para especialista humano."
     try:
         response = llm.invoke([
             SystemMessage(content=ESCALATION_SUMMARY_PROMPT),
-            HumanMessage(content=f"Cliente ID: {authenticated_user or user_id}\nHistórico Recente:\n{history_text}"),
+            HumanMessage(content=f"Cliente: {nome_cliente} (ID: {authenticated_user})\nHistórico Recente:\n{history_text}"),
         ])
         content_res = response.content.strip()
         for line in content_res.split("\n"):
@@ -82,11 +130,11 @@ def escalation_node(state: SupportState) -> dict:
     except Exception as e:
         logger.warning(f"Falha na sumarização automática do handoff: {e}")
 
-    logger.info(f"🤝 Human Handoff acionado! Protocolo: {protocol} | Fila: {queue_target}")
+    logger.info(f"🤝 Human Handoff acionado! Cliente: {nome_cliente} | Protocolo: {protocol} | Fila: {queue_target}")
 
-    # 4. Invocação mandatória da ferramenta abrir_chamado_servicenow
+    # 6. Invocação mandatória da ferramenta abrir_chamado_servicenow nominal
     tool_args = {
-        "user_id": authenticated_user or user_id,
+        "user_id": authenticated_user,
         "motivo": summary_text,
         "protocolo": protocol,
         "fila": queue_target,
@@ -108,11 +156,12 @@ def escalation_node(state: SupportState) -> dict:
         tool_call_id=call_id,
     )
 
-    # 5. Mensagem amigável e segura para o cliente
+    # 7. Mensagem amigável e nominal para o cliente
     msg_cliente = AIMessage(
         content=(
             f"🤝 **Transferência para Atendimento Humano Realizada**\n\n"
             f"Compreendo perfeitamente. Estou transferindo o seu atendimento para a nossa equipe especializada da Getnet.\n\n"
+            f"👤 **Cliente:** {nome_cliente} (`{cnpj_cpf}`)\n"
             f"📋 **Protocolo de Atendimento:** `{protocol}`\n"
             f"🏢 **Fila Direcionada:** {queue_target}\n"
             f"⏱️ **Tempo Estimado de Espera:** ~2 minutos\n\n"
@@ -127,10 +176,13 @@ def escalation_node(state: SupportState) -> dict:
         "messages": [ai_tool_call, tool_msg, msg_cliente],
         "next_agent": "escalation",
         "category": "Human Handoff / Escalonamento",
-        "routing_reason": "Transferência assistida para operador humano com consolidação de contexto",
+        "routing_reason": "Transferência assistida para operador humano com consolidação de contexto e identificação nominal",
         "human_handoff_requested": True,
         "ticket_protocol": protocol,
         "summary_for_human": summary_text,
         "queue_target": queue_target,
         "tools_used": ["abrir_chamado_servicenow"],
+        "authenticated_user_id": authenticated_user,
+        "awaiting_identification": False,
+        "pending_escalation": False,
     }
