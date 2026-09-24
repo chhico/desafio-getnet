@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     RAG_ASYNC_URLS: str = Field("https://www.getnet.eu/pt/suporte, https://site.getnet.com.br/get-ajuda/", env="RAG_ASYNC_URLS")
     RAG_SYNC_URLS: str = Field("https://site.getnet.com.br/blog/", env="RAG_SYNC_URLS")
     RAG_CRAWLER_MAX_DEPTH: int = Field(2, env="RAG_CRAWLER_MAX_DEPTH")
+    RAG_CRAWLER_MAX_PAGES: int = Field(100, env="RAG_CRAWLER_MAX_PAGES")
     RAG_WEB_SYNC_CRON: str = Field("0 3 * * *", env="RAG_WEB_SYNC_CRON")
 
     # LangChain
