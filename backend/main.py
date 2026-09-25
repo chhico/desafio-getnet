@@ -37,6 +37,31 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+from fastapi.openapi.utils import get_openapi
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    # Garante que o Swagger UI exiba o botão "Choose Files" para arrays de arquivos
+    for schema in openapi_schema.get("components", {}).get("schemas", {}).values():
+        if "properties" in schema:
+            for prop in schema["properties"].values():
+                if prop.get("type") == "array" and "items" in prop:
+                    items = prop["items"]
+                    if items.get("contentMediaType") == "application/octet-stream":
+                        items["format"] = "binary"
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.BACKEND_CORS_ORIGINS,
