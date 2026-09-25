@@ -1,13 +1,267 @@
 const { useState, useEffect, useRef } = React;
 
+/**
+ * Micro-parser nativo de Markdown (Zero Dependências Externas).
+ * Converte com segurança negritos, itálicos, listas, citações, código e blocos de fontes em React Elements.
+ */
+const MarkdownRenderer = ({ content }) => {
+    if (!content) return null;
+
+    // Processa formatação inline (negrito, itálico, código)
+    const renderInline = (text) => {
+        if (!text) return null;
+        
+        // Regex para capturar `code`, **bold**, *italic*
+        const parts = [];
+        let remaining = text;
+        let keyIdx = 0;
+
+        while (remaining.length > 0) {
+            // Código inline: `...`
+            const codeMatch = remaining.match(/`([^`]+)`/);
+            // Negrito: **...**
+            const boldMatch = remaining.match(/\*\*([^*]+)\*\*/);
+            // Itálico: *...*
+            const italicMatch = remaining.match(/(?<!\*)\*([^*]+)\*(?!\*)/);
+
+            // Descobre o primeiro match mais à esquerda
+            let firstMatch = null;
+            let matchType = null;
+            let matchIndex = Infinity;
+
+            if (codeMatch && codeMatch.index < matchIndex) {
+                firstMatch = codeMatch;
+                matchType = 'code';
+                matchIndex = codeMatch.index;
+            }
+            if (boldMatch && boldMatch.index < matchIndex) {
+                firstMatch = boldMatch;
+                matchType = 'bold';
+                matchIndex = boldMatch.index;
+            }
+            if (italicMatch && italicMatch.index < matchIndex) {
+                firstMatch = italicMatch;
+                matchType = 'italic';
+                matchIndex = italicMatch.index;
+            }
+
+            if (!firstMatch) {
+                parts.push(remaining);
+                break;
+            }
+
+            // Texto antes do match
+            if (matchIndex > 0) {
+                parts.push(remaining.substring(0, matchIndex));
+            }
+
+            // O conteúdo formatado
+            if (matchType === 'code') {
+                parts.push(<code key={`code-${keyIdx++}`} className="md-code-inline">{firstMatch[1]}</code>);
+            } else if (matchType === 'bold') {
+                parts.push(<strong key={`bold-${keyIdx++}`} className="md-strong">{firstMatch[1]}</strong>);
+            } else if (matchType === 'italic') {
+                parts.push(<em key={`em-${keyIdx++}`} className="md-em">{firstMatch[1]}</em>);
+            }
+
+            remaining = remaining.substring(matchIndex + firstMatch[0].length);
+        }
+
+        return parts;
+    };
+
+    // Divide em linhas para processamento de blocos
+    const lines = content.split('\n');
+    const elements = [];
+    let inList = false;
+    let listItems = [];
+    let listKey = 0;
+
+    const flushList = () => {
+        if (inList && listItems.length > 0) {
+            elements.push(
+                <ul key={`ul-${listKey++}`} className="md-list">
+                    {listItems.map((item, idx) => (
+                        <li key={idx} className="md-list-item">{renderInline(item)}</li>
+                    ))}
+                </ul>
+            );
+            listItems = [];
+            inList = false;
+        }
+    };
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const trimmed = line.trim();
+
+        // Linha em branco
+        if (!trimmed) {
+            flushList();
+            continue;
+        }
+
+        // Divisor horizontal
+        if (trimmed === '---' || trimmed === '***') {
+            flushList();
+            elements.push(<hr key={`hr-${i}`} className="md-divider" />);
+            continue;
+        }
+
+        // Títulos
+        if (trimmed.startsWith('### ')) {
+            flushList();
+            elements.push(<h4 key={`h4-${i}`} className="md-heading-4">{renderInline(trimmed.substring(4))}</h4>);
+            continue;
+        }
+        if (trimmed.startsWith('## ')) {
+            flushList();
+            elements.push(<h3 key={`h3-${i}`} className="md-heading-3">{renderInline(trimmed.substring(3))}</h3>);
+            continue;
+        }
+        if (trimmed.startsWith('# ')) {
+            flushList();
+            elements.push(<h2 key={`h2-${i}`} className="md-heading-2">{renderInline(trimmed.substring(2))}</h2>);
+            continue;
+        }
+
+        // Citações em bloco (> quote)
+        if (trimmed.startsWith('> ')) {
+            flushList();
+            elements.push(
+                <blockquote key={`quote-${i}`} className="md-blockquote">
+                    {renderInline(trimmed.substring(2))}
+                </blockquote>
+            );
+            continue;
+        }
+
+        // Listas com marcadores (- ou * ou •)
+        if (trimmed.startsWith('- ') || trimmed.startsWith('* ') || trimmed.startsWith('• ')) {
+            inList = true;
+            listItems.push(trimmed.substring(2));
+            continue;
+        }
+
+        // Seção especial de fontes consultadas
+        if (trimmed.includes('📌 **Fontes consultadas:**') || trimmed.includes('📌 Fontes consultadas:')) {
+            flushList();
+            elements.push(
+                <div key={`sources-header-${i}`} className="md-sources-header">
+                    <span>📌</span> <strong>Fontes consultadas:</strong>
+                </div>
+            );
+            continue;
+        }
+
+        // Parágrafo comum
+        flushList();
+        elements.push(
+            <p key={`p-${i}`} className="md-paragraph">
+                {renderInline(line)}
+            </p>
+        );
+    }
+
+    flushList();
+    return <div className="markdown-content">{elements}</div>;
+};
+
+// Configuração visual de temas e ícones para cada agente
+const AGENT_CONFIG = {
+    knowledge: {
+        label: "Conhecimento",
+        icon: "🧠",
+        className: "badge-knowledge",
+        desc: "RAG & Web Search"
+    },
+    support: {
+        label: "Suporte Técnico",
+        icon: "🎧",
+        className: "badge-support",
+        desc: "Atendimento & Ferramentas"
+    },
+    escalation: {
+        label: "Escalonamento Humano",
+        icon: "🤝",
+        className: "badge-escalation",
+        desc: "Human Handoff em Tempo Real"
+    },
+    guardrail_block: {
+        label: "Segurança & Políticas",
+        icon: "🛡️",
+        className: "badge-guardrail",
+        desc: "Guardrail Ativado"
+    },
+    orchestrator: {
+        label: "Orquestrador",
+        icon: "🧭",
+        className: "badge-orchestrator",
+        desc: "Roteador Inteligente"
+    }
+};
+
+// Sugestões de acesso rápido exibidas quando a conversa está vazia
+const SUGGESTIONS = [
+    {
+        id: "sug-taxas",
+        icon: "💳",
+        title: "Taxas e Maquininhas",
+        desc: "Quais são as taxas da Get Smart e da Get Mini?",
+        query: "Quais são as taxas e funcionalidades da Get Smart e Get Mini?"
+    },
+    {
+        id: "sug-vendas",
+        icon: "📊",
+        title: "Vendas e Extrato",
+        desc: "Consultar meu histórico de vendas e saldo",
+        query: "Gostaria de consultar minhas transações e saldo de vendas de hoje."
+    },
+    {
+        id: "sug-suporte",
+        icon: "🚨",
+        title: "Suporte Técnico POS",
+        desc: "Maquininha com erro ou dano físico",
+        query: "Minha maquininha Get Smart apresentou erro de leitura e não conecta no Wi-Fi."
+    },
+    {
+        id: "sug-humano",
+        icon: "🤝",
+        title: "Atendente Humano",
+        desc: "Solicitar transferência especializada",
+        query: "Gostaria de falar com um atendente humano."
+    }
+];
+
 const Dashboard = () => {
-    const [messages, setMessages] = useState([]);
+    // Gerador de ID único de sessão
+    const createNewSession = (title = "Nova Conversa") => ({
+        id: "sessao_" + Math.random().toString(36).substring(2, 9),
+        title,
+        messages: [],
+        createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        updatedAt: Date.now()
+    });
+
+    // Estados em memória (React State)
+    const [sessions, setSessions] = useState(() => [createNewSession()]);
+    const [activeSessionId, setActiveSessionId] = useState(() => sessions[0]?.id);
+    const [sidebarOpen, setSidebarOpen] = useState(true);
     const [inputText, setInputText] = useState("");
     const [loading, setLoading] = useState(false);
     const messagesEndRef = useRef(null);
+    const inputRef = useRef(null);
 
-    // Identificador único da sessão ativa de chat
-    const [threadId, setThreadId] = useState(() => "sessao_" + Math.random().toString(36).substring(2, 9));
+    // Função auxiliar para focar o input de mensagem
+    const focusInput = () => {
+        if (inputRef.current) {
+            inputRef.current.focus();
+        }
+    };
+
+    // Sessão ativa atual
+    const activeSession = sessions.find(s => s.id === activeSessionId) || sessions[0];
+    const messages = activeSession ? activeSession.messages : [];
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -17,127 +271,408 @@ const Dashboard = () => {
         scrollToBottom();
     }, [messages, loading]);
 
-    const handleSend = async (e) => {
-        e.preventDefault();
-        if (!inputText.trim() || loading) return;
+    // Mantém o cursor/foco no campo de mensagem sempre que o estado de loading ou de sessão mudar
+    useEffect(() => {
+        focusInput();
+    }, [loading, activeSessionId]);
 
-        const userText = inputText.trim();
+    // Criar uma nova conversa
+    const handleNewChat = () => {
+        const freshSession = createNewSession();
+        setSessions(prev => [freshSession, ...prev]);
+        setActiveSessionId(freshSession.id);
         setInputText("");
-        
-        // Adiciona a mensagem do usuário imediatamente
-        setMessages(prev => [...prev, { role: "user", content: userText, tempId: Date.now() }]);
+        setTimeout(focusInput, 50);
+    };
+
+    // Alternar sessão ativa
+    const handleSelectSession = (sessionId) => {
+        if (loading) return;
+        setActiveSessionId(sessionId);
+        setTimeout(focusInput, 50);
+    };
+
+    // Excluir uma sessão individual
+    const handleDeleteSession = (e, sessionIdToDelete) => {
+        e.stopPropagation();
+        if (loading) return;
+
+        setSessions(prev => {
+            const filtered = prev.filter(s => s.id !== sessionIdToDelete);
+            if (filtered.length === 0) {
+                const fresh = createNewSession();
+                setActiveSessionId(fresh.id);
+                return [fresh];
+            }
+            if (activeSessionId === sessionIdToDelete) {
+                setActiveSessionId(filtered[0].id);
+            }
+            return filtered;
+        });
+    };
+
+    // Limpar todas as sessões em memória
+    const handleClearAllSessions = () => {
+        if (loading) return;
+        if (window.confirm("Deseja realmente limpar todas as conversas criadas nesta sessão?")) {
+            const fresh = createNewSession();
+            setSessions([fresh]);
+            setActiveSessionId(fresh.id);
+            setInputText("");
+        }
+    };
+
+    // Envio de mensagem
+    const sendMessage = async (textToSend) => {
+        const trimmed = textToSend.trim();
+        if (!trimmed || loading) return;
+
+        setInputText("");
+        const timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        const userMsg = {
+            role: "user",
+            content: trimmed,
+            timestamp: timeNow,
+            tempId: Date.now()
+        };
+
+        const targetSessionId = activeSessionId;
+
+        // Atualiza a sessão com a mensagem do usuário e ajusta o título se for a 1ª mensagem
+        setSessions(prev => prev.map(s => {
+            if (s.id === targetSessionId) {
+                const isFirst = s.messages.length === 0;
+                const autoTitle = isFirst 
+                    ? (trimmed.length > 28 ? trimmed.substring(0, 26) + "..." : trimmed) 
+                    : s.title;
+                return {
+                    ...s,
+                    title: (s.title === "Nova Conversa" || isFirst) ? autoTitle : s.title,
+                    updatedAt: Date.now(),
+                    messages: [...s.messages, userMsg]
+                };
+            }
+            return s;
+        }));
+
         setLoading(true);
+        focusInput();
 
         try {
             const res = await window.apiFetch("/chat", {
                 method: "POST",
                 body: JSON.stringify({
-                    thread_id: threadId,
-                    message: userText
+                    thread_id: targetSessionId,
+                    message: trimmed
                 })
             });
 
-            setMessages(prev => [
-                ...prev, 
-                { 
-                    role: "assistant", 
-                    content: res.response, 
-                    agent: res.agent_used, 
-                    tools: res.tools_used || [],
-                    tempId: Date.now() + 1 
+            const assistantMsg = {
+                role: "assistant",
+                content: res.response,
+                agent: res.agent_used,
+                tools: res.tools_used || [],
+                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                tempId: Date.now() + 1
+            };
+
+            setSessions(prev => prev.map(s => {
+                if (s.id === targetSessionId) {
+                    return {
+                        ...s,
+                        updatedAt: Date.now(),
+                        messages: [...s.messages, assistantMsg]
+                    };
                 }
-            ]);
+                return s;
+            }));
         } catch (err) {
-            setMessages(prev => [
-                ...prev,
-                {
-                    role: "assistant error",
-                    content: `Erro ao enviar mensagem: ${err.message}`,
-                    tempId: Date.now() + 1
+            const errorMsg = {
+                role: "assistant error",
+                content: `❌ **Falha na comunicação:**\n\nNão foi possível processar sua mensagem: ${err.message}`,
+                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                tempId: Date.now() + 1
+            };
+
+            setSessions(prev => prev.map(s => {
+                if (s.id === targetSessionId) {
+                    return {
+                        ...s,
+                        updatedAt: Date.now(),
+                        messages: [...s.messages, errorMsg]
+                    };
                 }
-            ]);
+                return s;
+            }));
         } finally {
             setLoading(false);
+            setTimeout(focusInput, 30);
         }
     };
 
-    const handleNewChat = () => {
-        setThreadId("sessao_" + Math.random().toString(36).substring(2, 9));
-        setMessages([]);
+    const handleFormSubmit = (e) => {
+        e.preventDefault();
+        sendMessage(inputText);
+        focusInput();
+    };
+
+    const handleSuggestionClick = (query) => {
+        sendMessage(query);
+        focusInput();
     };
 
     return (
-        <div className="dashboard">
-            <div className="chat-panel">
-                <div className="chat-header">
-                    <div>
-                        <h3 style={{ margin: 0 }}>Atendimento Inteligente — Multi-Agent</h3>
-                        <small style={{ color: 'var(--text-muted)' }}>Sessão: {threadId}</small>
+        <div className="app-layout">
+            {/* ========================================================= */}
+            {/* 1. BARRA LATERAL (SIDEBAR RETRÁTIL EM MEMÓRIA)           */}
+            {/* ========================================================= */}
+            <aside className={`sidebar ${sidebarOpen ? 'open' : 'collapsed'}`} id="app-sidebar">
+                <div className="sidebar-header">
+                    <div className="brand-badge">
+                        <div className="brand-logo-circle">G</div>
+                        <div className="brand-info">
+                            <span className="brand-name">Getnet</span>
+                            <span className="brand-sub">Multi-Agent AI</span>
+                        </div>
                     </div>
-                    <button 
-                        className="btn-primary" 
-                        style={{ width: 'auto', padding: '0.5rem 1rem', fontSize: '0.85rem' }} 
+                    <button
+                        className="btn-new-chat"
+                        id="btn-new-chat"
                         onClick={handleNewChat}
-                        title="Iniciar nova conversa com novo histórico"
+                        title="Criar nova sessão de atendimento"
                     >
-                        Nova Conversa
+                        <span className="plus-icon">+</span> Nova Conversa
                     </button>
                 </div>
-                
-                <div className="chat-messages">
+
+                <div className="sidebar-section-title">
+                    <span>Sessões Recentes ({sessions.length})</span>
+                </div>
+
+                <div className="session-list" id="session-list">
+                    {sessions.map((sess) => {
+                        const isActive = sess.id === activeSessionId;
+                        const msgCount = sess.messages.length;
+                        return (
+                            <div
+                                key={sess.id}
+                                id={`session-item-${sess.id}`}
+                                className={`session-item ${isActive ? 'active' : ''}`}
+                                onClick={() => handleSelectSession(sess.id)}
+                                title={`Sessão: ${sess.id}`}
+                            >
+                                <div className="session-item-content">
+                                    <span className="session-icon">💬</span>
+                                    <div className="session-text-group">
+                                        <span className="session-title">{sess.title}</span>
+                                        <span className="session-meta">
+                                            {sess.createdAt} • {msgCount} {msgCount === 1 ? 'msg' : 'msgs'}
+                                        </span>
+                                    </div>
+                                </div>
+                                <button
+                                    className="btn-delete-session"
+                                    id={`btn-delete-${sess.id}`}
+                                    onClick={(e) => handleDeleteSession(e, sess.id)}
+                                    title="Excluir esta sessão"
+                                >
+                                    🗑️
+                                </button>
+                            </div>
+                        );
+                    })}
+                </div>
+
+                <div className="sidebar-footer">
+                    <button
+                        className="btn-clear-all"
+                        id="btn-clear-all-sessions"
+                        onClick={handleClearAllSessions}
+                        title="Limpar todas as sessões em memória"
+                    >
+                        <span>🗑️</span> Limpar Todas as Conversas
+                    </button>
+                </div>
+            </aside>
+
+            {/* ========================================================= */}
+            {/* 2. PAINEL PRINCIPAL DE CHAT                             */}
+            {/* ========================================================= */}
+            <main className="chat-panel" id="chat-panel">
+                {/* Header Superior do Chat */}
+                <header className="chat-header">
+                    <div className="chat-header-left">
+                        <button
+                            id="btn-toggle-sidebar"
+                            className="btn-icon-toggle"
+                            onClick={() => setSidebarOpen(prev => !prev)}
+                            title={sidebarOpen ? "Recolher barra lateral" : "Expandir barra lateral"}
+                        >
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                                <line x1="9" y1="3" x2="9" y2="21" />
+                            </svg>
+                        </button>
+                        <div className="chat-header-titles">
+                            <h2 className="chat-title">
+                                {activeSession ? activeSession.title : "Atendimento Inteligente"}
+                            </h2>
+                            <div className="chat-subtitles">
+                                <span className="status-indicator"></span>
+                                <span className="chat-subtitle">
+                                    ID: <code>{activeSessionId}</code> • {messages.length} mensagens
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="chat-header-right">
+                        <button
+                            className="btn-header-new"
+                            id="btn-header-new-chat"
+                            onClick={handleNewChat}
+                            title="Iniciar nova conversa limpa"
+                        >
+                            <span>+</span> Novo Chat
+                        </button>
+                    </div>
+                </header>
+
+                {/* Área de Mensagens */}
+                <div className="chat-messages" id="chat-messages-container">
                     {messages.length === 0 ? (
-                        <div style={{ textAlign: 'center', color: 'var(--text-muted)', marginTop: '3rem' }}>
-                            <p style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--text-main)', marginBottom: '0.5rem' }}>
-                                👋 Olá! Como posso ajudar hoje?
-                            </p>
-                            <p style={{ maxWidth: '480px', margin: '0 auto', fontSize: '0.9rem' }}>
-                                Pergunte sobre o status de um pedido (ex: <code>PED-001</code>), dúvidas gerais, pesquisas na web ou criação de tarefas.
-                            </p>
+                        <div className="empty-state-container">
+                            <div className="empty-hero">
+                                <div className="hero-logo-box">
+                                    <span className="hero-emoji">👋</span>
+                                </div>
+                                <h1 className="hero-title">Como posso te ajudar hoje?</h1>
+                                <p className="hero-desc">
+                                    Sou o assistente integrado da Getnet. Escolha uma das opções abaixo ou digite sua dúvida sobre taxas, relatórios financeiros ou suporte técnico.
+                                </p>
+                            </div>
+
+                            {/* Chips de Sugestões de Acesso Rápido */}
+                            <div className="suggestions-grid" id="suggestions-grid">
+                                {SUGGESTIONS.map(sug => (
+                                    <div
+                                        key={sug.id}
+                                        id={sug.id}
+                                        className="suggestion-card"
+                                        onClick={() => handleSuggestionClick(sug.query)}
+                                    >
+                                        <div className="suggestion-icon">{sug.icon}</div>
+                                        <div className="suggestion-text">
+                                            <strong>{sug.title}</strong>
+                                            <span>{sug.desc}</span>
+                                        </div>
+                                        <span className="suggestion-arrow">➔</span>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     ) : (
-                        messages.map((msg) => (
-                            <div key={msg.tempId} className={`message ${msg.role}`}>
-                                {msg.role.includes('assistant') && (
-                                    <div style={{ marginBottom: '0.45rem', display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                                        {msg.agent && <span className="agent-tag">Agente: {msg.agent}</span>}
-                                        {msg.tools && msg.tools.length > 0 && (
-                                            <span className="tool-tag" title="Ferramentas corporativas executadas no turno">
-                                                🔧 {msg.tools.join(', ')}
-                                            </span>
-                                        )}
+                        messages.map((msg) => {
+                            const isUser = msg.role === 'user';
+                            const isError = msg.role.includes('error');
+                            const agentInfo = AGENT_CONFIG[msg.agent] || (msg.agent ? { label: msg.agent, icon: "🤖", className: "badge-default" } : null);
+
+                            return (
+                                <div
+                                    key={msg.tempId}
+                                    className={`message-wrapper ${isUser ? 'user-wrapper' : 'assistant-wrapper'}`}
+                                >
+                                    <div className="message-avatar">
+                                        {isUser ? '👤' : (agentInfo ? agentInfo.icon : '🔴')}
                                     </div>
-                                )}
-                                <strong>{msg.role === 'user' ? 'Você' : 'Assistente'}:</strong><br/>
-                                <span style={{ whiteSpace: 'pre-wrap' }}>{msg.content}</span>
-                            </div>
-                        ))
+                                    <div className={`message-bubble ${isUser ? 'user-bubble' : 'assistant-bubble'} ${isError ? 'error-bubble' : ''}`}>
+                                        {/* Cabeçalho da Mensagem */}
+                                        <div className="message-header">
+                                            <span className="message-author">
+                                                {isUser ? 'Você' : (agentInfo ? agentInfo.label : 'Assistente Getnet')}
+                                            </span>
+
+                                            {!isUser && agentInfo && (
+                                                <span className={`agent-pill ${agentInfo.className}`}>
+                                                    {agentInfo.icon} {agentInfo.label}
+                                                </span>
+                                            )}
+
+                                            {!isUser && msg.tools && msg.tools.length > 0 && (
+                                                <div className="tools-container">
+                                                    {msg.tools.map((tName, tIdx) => (
+                                                        <span key={tIdx} className="tool-pill" title={`Ferramenta corporativa: ${tName}`}>
+                                                            🔧 {tName}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            <span className="message-timestamp">{msg.timestamp}</span>
+                                        </div>
+
+                                        {/* Conteúdo Renderizado com Markdown Nativo */}
+                                        <div className="message-body">
+                                            <MarkdownRenderer content={msg.content} />
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })
                     )}
+
+                    {/* Indicador de Digitação / Consulta */}
                     {loading && (
-                        <div className="message assistant">
-                            <span className="spinner" style={{ display: 'inline-block', verticalAlign: 'middle', borderColor: 'var(--primary)', borderTopColor: 'transparent', marginRight: '0.5rem' }}></span>
-                            <span>Consultando especialistas...</span>
+                        <div className="message-wrapper assistant-wrapper loading-wrapper">
+                            <div className="message-avatar">⚙️</div>
+                            <div className="message-bubble assistant-bubble loading-bubble">
+                                <div className="typing-dots">
+                                    <span></span>
+                                    <span></span>
+                                    <span></span>
+                                </div>
+                                <span className="loading-text">Consultando especialistas Getnet...</span>
+                            </div>
                         </div>
                     )}
                     <div ref={messagesEndRef} />
                 </div>
-                
-                <form className="chat-input-area" onSubmit={handleSend}>
-                    <input 
-                        type="text" 
-                        placeholder="Digite sua dúvida ou comando..." 
-                        value={inputText}
-                        onChange={e => setInputText(e.target.value)}
-                        disabled={loading}
-                        autoFocus
-                    />
-                    <button type="submit" className="btn-primary" disabled={loading || !inputText.trim()}>
-                        Enviar
-                    </button>
-                </form>
-            </div>
+
+                {/* Input e Formulário de Envio */}
+                <footer className="chat-footer">
+                    <form className="chat-input-form" onSubmit={handleFormSubmit}>
+                        <input
+                            ref={inputRef}
+                            id="chat-input-text"
+                            type="text"
+                            placeholder={loading ? "Aguardando resposta dos especialistas Getnet..." : "Envie uma mensagem ou consulte suas maquininhas Getnet..."}
+                            value={inputText}
+                            onChange={e => setInputText(e.target.value)}
+                            autoComplete="off"
+                            autoFocus
+                        />
+                        <button
+                            type="submit"
+                            id="btn-send-message"
+                            className="btn-send"
+                            disabled={loading || !inputText.trim()}
+                            title="Enviar mensagem"
+                        >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                <line x1="22" y1="2" x2="11" y2="13" />
+                                <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                            </svg>
+                        </button>
+                    </form>
+                    <div className="input-hint">
+                        <span>Pressione <code>Enter</code> para enviar. Respostas seguras e integradas à base oficial Getnet.</span>
+                    </div>
+                </footer>
+            </main>
         </div>
     );
 };
 
-// Expose to window so index.html can use it
+// Exporta para escopo global do navegador
 window.Dashboard = Dashboard;
