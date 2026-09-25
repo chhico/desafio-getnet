@@ -29,7 +29,7 @@ class ConversationService:
         # Extração da resposta textual final
         all_msgs = result.get("messages", [])
         ai_msg = next(
-            (m.content for m in reversed(all_msgs) if isinstance(m, AIMessage)), 
+            (m.content for m in reversed(all_msgs) if isinstance(m, AIMessage) and m.content and str(m.content).strip()),
             "O agente processou sua solicitação, mas não retornou texto."
         )
         
