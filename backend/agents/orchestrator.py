@@ -92,6 +92,7 @@ def orchestrator_node(state: SupportState) -> dict:
     awaiting_id = state.get("awaiting_identification", False)
     pending_escalation = state.get("pending_escalation", False)
     authenticated_id = state.get("authenticated_user_id")
+    awaiting_subject = state.get("awaiting_escalation_subject", False)
 
     # Monta breve histórico das últimas interações para evitar desvios semânticos fora de contexto
     recent_history = []
@@ -105,7 +106,16 @@ def orchestrator_node(state: SupportState) -> dict:
         context_info += f"STATUS: Cliente já autenticado na sessão ({authenticated_id}). Dúvidas de acompanhamento de atendimento técnico/suporte podem permanecer em 'support'.\n"
     if recent_history:
         context_info += f"Histórico recente:\n" + "\n".join(recent_history) + "\n"
-    if pending_escalation:
+    if awaiting_subject:
+        context_info += (
+            "STATUS: O assistente acolheu o pedido de atendimento humano e perguntou ao cliente qual é o assunto ou problema para triagem e agilização.\n"
+            "DIRETRIZ DESTE ESTADO:\n"
+            "  - Se o usuário explicar o assunto/problema (ex: extratos, dados privados, transações, manuais, taxas, Wi-Fi):\n"
+            "    * Direcione para 'support' se envolver dados privados da conta, extratos ou transações do lojista.\n"
+            "    * Direcione para 'knowledge' se envolver procedimentos conceituais, manuais, taxas gerais, Wi-Fi ou produtos Getnet.\n"
+            "  - Se o usuário NÃO explicar o assunto e insistir/reiterar que quer falar com atendente humano/pessoa/supervisor ou recusar falar com robô, direcione para 'escalation'.\n"
+        )
+    elif pending_escalation:
         context_info += "STATUS: O atendimento está em processo de escalonamento humano aguardando o documento/CPF do cliente.\n"
     elif awaiting_id:
         context_info += "STATUS: O suporte solicitou anteriormente a identificação (documento/CPF) do cliente.\n"

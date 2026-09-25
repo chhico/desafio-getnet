@@ -58,6 +58,9 @@ class SupportState(TypedDict):
     summary_for_human: str | None
     queue_target: str | None
     pending_escalation: bool | None
+    escalation_intent_retries: int | None
+    awaiting_escalation_subject: bool | None
+    originated_from_human_intent: bool | None
 
     # Observabilidade / Rastreabilidade de Ferramentas
     tools_used: list[str] | None

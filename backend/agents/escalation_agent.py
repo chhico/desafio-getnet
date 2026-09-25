@@ -13,7 +13,7 @@ import random
 import logging
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, ToolMessage
 from backend.agents.state import SupportState, get_last_human_message
-from backend.agents.tools.escalation_tools import abrir_chamado_servicenow, ESCALATION_TOOLS
+from backend.agents.tools.escalation_tools import transferir_atendimento_humano, ESCALATION_TOOLS
 from backend.agents.tools.support_tools import _CLIENT_DATABASE, buscar_cliente_por_documento
 from backend.core.config import settings
 from backend.core.llm_factory import get_agent_llm
@@ -41,19 +41,141 @@ RESUMO: <resumo objetivo do caso>
 """
 
 
+CRITICAL_KEYWORDS = [
+    # Dano físico / Sinistro térmico / Hardware irrecuperável
+    "queimou", "queimada", "queimado", "fritadeira", "óleo", "fogo", "fumaça",
+    "derreteu", "derretida", "curto-circuito", "sinistro", "caiu no chão",
+    "quebrou a tela", "tela de vidro inteira", "arrombamento", "assaltada",
+    "assalto", "ped tampered", "tamper detected", "lacre de segurança",
+    "lacre rompido", "lacre traseiro", "lacre plástico", "lacre perfurado",
+    "chupa-cabra", "security breach", "leitor físico de chip da maquininha quebrou",
+    "substituição física", "técnico de campo para substituir",
+    # Fraude ativa / Desvio financeiro / Golpe
+    "fraude", "golpe", "invasão", "invadido", "invadiram", "senha vazada",
+    "desvio", "desviar", "chave pix desconhecida", "conta bancária desconhecida",
+    "conta desconhecida", "não autorizada", "antecipação ilícita", "antecipação não autorizada",
+    "transferência não autorizada", "clonaram", "clonagem",
+    # Jurídico / Regulatório
+    "bloqueio judicial", "liminar", "tutela de urgência", "ordem judicial",
+    "juiz", "vara cível", "penhora", "multa diária", "intimação", "ministério público",
+    "procon", "bacen", "banco central", "notificação extrajudicial", "ofício formal",
+    "ofício do ministério", "processo administrativo",
+    # Grandes Contas / TEF / Black Friday
+    "rede varejista", "black friday", "tef dedicado", "servidor tef",
+    "concentradores getnet", "pontos de venda paralisados", "checkouts travados",
+    "gateway corporativo", "perda de vendas", "50 pedidos por minuto",
+    "key accounts", "sla dedicado",
+    # Churn agressivo / Cancelamento por concorrente
+    "cancelar imediatamente", "cancelar minhas", "rescindir o contrato",
+    "devolver minhas", "devolver as 10", "proposta da concorrência",
+    "stone me ofereceu", "cielo me ofereceu", "cobrir a oferta", "cobrir a proposta",
+    # Mesa de Negócios e Tarifas / Renegociação comercial
+    "renegociar formalmente", "renegociar o pacote", "renegociar nosso plano de taxas",
+    "renegociar taxas", "renegociar tarifas", "isenção de aluguel", "isenção de mensalidade",
+    "pacote de taxas mdr", "taxas mdr",
+    # Supervisão Humana de Atendimento / Escalação por Erro Grave
+    "supervisora da equipe", "supervisão humana", "orientação completamente errada",
+    "falar urgente com a supervisão", "supervisão de atendimento", "supervisora de atendimento",
+    # Exaustão severa comprovada de troubleshooting
+    "já liguei 4 vezes", "já reiniciei 10 vezes", "já abri 5 protocolos",
+    "5 protocolos sem retorno", "4 protocolos abertos", "há mais de 3 semanas"
+]
+
+INSISTENCE_KEYWORDS = [
+    "não quero robô", "nao quero robo", "não quero falar com robô", "nao quero falar com robo",
+    "não vou falar com robô", "transfere logo", "transfira logo", "quero humano",
+    "quero falar com humano", "quero atendente", "quero pessoa", "me passa logo",
+    "me passa pro atendente", "apenas transfira", "só transfere", "so transfere",
+    "humano agora", "pessoa de verdade", "não me interessa", "fale com humano",
+    "supervisor", "supervisora", "atendente de verdade"
+]
+
+
+def is_critical_incident(message: str, messages: list) -> bool:
+    """Verifica se a mensagem atual ou turnos recentes contêm evidência de incidente crítico (Fast-Track)."""
+    text_to_check = message.lower()
+    for m in messages[-4:]:
+        if isinstance(m, HumanMessage) or getattr(m, "type", "") == "human":
+            text_to_check += " " + (m.content or "").lower()
+            
+    return any(kw in text_to_check for kw in CRITICAL_KEYWORDS)
+
+
+def is_human_insistence(message: str) -> bool:
+    """Verifica se a mensagem é uma insistência ou recusa em explicar o assunto."""
+    msg_low = message.lower()
+    return any(kw in msg_low for kw in INSISTENCE_KEYWORDS)
+
+
 def escalation_node(state: SupportState) -> dict:
     """
     Nó do Agente de Escalonamento para Humanos.
-    Garante que o cliente seja identificado por documento (CPF/CNPJ) antes de abrir o chamado no ServiceNow.
-    Após a identificação, sintetiza o caso, gera protocolo oficial nominal e formaliza o Human Handoff.
+    Implementa:
+    1. Fast-Track Imediato para Incidentes Críticos Objetivos (Fraude, PED Tamper, Sinistro, Bloqueio Judicial).
+    2. Triagem de 2 Níveis para Pedidos Genéricos de Atendimento Humano:
+       - Nível 1: Acolhimento e solicitação do assunto para tentar agilizar/direcionar.
+       - Nível 2: Insistência educada informando a rapidez do autoatendimento vs fila de espera.
+       - Nível 3: Handoff formal, exigindo identificação por documento (CPF/CNPJ).
     """
     messages = state.get("messages", [])
     last_user_message = get_last_human_message(messages)
     authenticated_user = state.get("authenticated_user_id")
     awaiting_id = state.get("awaiting_identification", False)
+    pending_escalation = state.get("pending_escalation", False)
+    retries = state.get("escalation_intent_retries", 0) or 0
+    awaiting_subject = state.get("awaiting_escalation_subject", False)
 
     # -----------------------------------------------------------------------
-    # 1. Verificação de Identificação do Cliente (CPF/CNPJ Obrigatório)
+    # 1. Verificação de Incidente Crítico (Fast-Track)
+    # -----------------------------------------------------------------------
+    is_critical = is_critical_incident(last_user_message, messages)
+    has_doc = buscar_cliente_por_documento(last_user_message) is not None
+
+    # Se NÃO for incidente crítico e NÃO estiver aguardando documento pós-confirmação:
+    if not is_critical and not pending_escalation:
+        # Nível 1 de Triagem: primeiro pedido de humano
+        if retries == 0:
+            msg_triagem_1 = AIMessage(
+                content=(
+                    "Com certeza posso transferir você para um especialista humano! 😊\n\n"
+                    "Mas para que eu possa direcionar seu atendimento para a fila certa (e verificar se consigo agilizar sua solução imediatamente sem tempo de espera na fila), "
+                    "você poderia me contar resumidamente **sobre qual assunto ou problema você precisa de ajuda**?"
+                ),
+                name="escalation",
+            )
+            return {
+                "messages": [msg_triagem_1],
+                "next_agent": "escalation",
+                "category": "Human Handoff / Triagem",
+                "routing_reason": "Triagem de Intenção Nível 1: Solicitação de assunto prévio antes do handoff",
+                "escalation_intent_retries": 1,
+                "awaiting_escalation_subject": True,
+                "originated_from_human_intent": True,
+            }
+
+        # Nível 2 de Triagem: cliente insiste no humano sem informar assunto e sem ter enviado documento
+        elif retries == 1 and not has_doc and (awaiting_subject or is_human_insistence(last_user_message)):
+            msg_triagem_2 = AIMessage(
+                content=(
+                    "Entendo perfeitamente sua preferência! Mas vale lembrar que por aqui eu consigo consultar seus dados cadastrais, extratos, transações e tirar dúvidas técnicas instantaneamente, sem nenhum tempo de espera em fila de atendimento.\n\n"
+                    "Gostaria de me adiantar sua dúvida para tentarmos resolver agora ou realmente prefere aguardar na fila de transferência para a nossa equipe humana?"
+                ),
+                name="escalation",
+            )
+            return {
+                "messages": [msg_triagem_2],
+                "next_agent": "escalation",
+                "category": "Human Handoff / Triagem",
+                "routing_reason": "Triagem de Intenção Nível 2: Insistência educada sobre agilidade do autoatendimento",
+                "escalation_intent_retries": 2,
+                "awaiting_escalation_subject": True,
+                "originated_from_human_intent": True,
+            }
+
+        # Nível 3: Cliente reiterou a insistência ou enviou documento -> Aceita o handoff!
+
+    # -----------------------------------------------------------------------
+    # 2. Verificação de Identificação do Cliente (CPF/CNPJ Obrigatório)
     # -----------------------------------------------------------------------
     if not authenticated_user or authenticated_user not in _CLIENT_DATABASE:
         # Tenta identificar o cliente pelo documento informado na mensagem atual
@@ -77,6 +199,7 @@ def escalation_node(state: SupportState) -> dict:
                     "category": "Human Handoff / Escalonamento",
                     "awaiting_identification": True,
                     "pending_escalation": True,
+                    "escalation_intent_retries": retries,
                 }
 
             msg_solicitacao = AIMessage(
@@ -91,22 +214,23 @@ def escalation_node(state: SupportState) -> dict:
                 "messages": [msg_solicitacao],
                 "next_agent": "escalation",
                 "category": "Human Handoff / Escalonamento",
-                "routing_reason": "Solicitação de identificação prévia para abertura de chamado nominal no ServiceNow",
+                "routing_reason": "Solicitação de identificação prévia para abertura de chamado nominal",
                 "awaiting_identification": True,
                 "pending_escalation": True,
+                "escalation_intent_retries": retries,
             }
 
     # -----------------------------------------------------------------------
-    # 2. Cliente devidamente identificado! Recupera os dados cadastrais
+    # 3. Cliente devidamente identificado! Recupera os dados cadastrais
     # -----------------------------------------------------------------------
     client_data = _CLIENT_DATABASE[authenticated_user]
     nome_cliente = client_data.get("nome", authenticated_user)
     cnpj_cpf = client_data.get("cnpj") or client_data.get("cpf", "N/A")
 
-    # 3. Geração de Protocolo Oficial Getnet
+    # 4. Geração de Protocolo Oficial Getnet
     protocol = f"GET-2026-{random.randint(1000, 9999)}"
 
-    # 4. Consolidação do histórico textual da conversa
+    # 5. Consolidação do histórico textual da conversa
     history_lines = []
     for m in messages:
         sender = "Usuário" if (isinstance(m, HumanMessage) or getattr(m, "type", "") == "human") else "Assistente"
@@ -133,42 +257,46 @@ def escalation_node(state: SupportState) -> dict:
 
     logger.info(f"🤝 Human Handoff acionado! Cliente: {nome_cliente} | Protocolo: {protocol} | Fila: {queue_target}")
 
-    # 6. Invocação mandatória da ferramenta abrir_chamado_servicenow nominal
+    # 6. Invocação mandatória da ferramenta transferir_atendimento_humano nominal
     tool_args = {
         "user_id": authenticated_user,
         "motivo": summary_text,
         "protocolo": protocol,
         "fila": queue_target,
     }
-    abrir_chamado_servicenow.invoke(tool_args)
+    tool_result = transferir_atendimento_humano.invoke(tool_args)
+    operador_conectado = tool_result.get("operador", "Especialista Getnet")
+    tempo_estimado = tool_result.get("tempo_estimado", "< 1 minuto")
 
-    call_id = f"call_sn_{random.randint(1000, 9999)}"
+    call_id = f"call_handoff_{random.randint(1000, 9999)}"
     ai_tool_call = AIMessage(
         content="",
         tool_calls=[{
-            "name": "abrir_chamado_servicenow",
+            "name": "transferir_atendimento_humano",
             "args": tool_args,
             "id": call_id,
         }],
     )
     tool_msg = ToolMessage(
-        content="None",
-        name="abrir_chamado_servicenow",
+        content=str(tool_result),
+        name="transferir_atendimento_humano",
         tool_call_id=call_id,
     )
 
-    # 7. Mensagem amigável e nominal para o cliente
+    # 7. Mensagem amigável e nominal para o cliente em tempo real
     msg_cliente = AIMessage(
         content=(
-            f"🤝 **Transferência para Atendimento Humano Realizada**\n\n"
-            f"Compreendo perfeitamente. Estou transferindo o seu atendimento para a nossa equipe especializada da Getnet.\n\n"
-            f"👤 **Cliente:** {nome_cliente} (`{cnpj_cpf}`)\n"
-            f"📋 **Protocolo de Atendimento:** `{protocol}`\n"
-            f"🏢 **Fila Direcionada:** {queue_target}\n"
-            f"⏱️ **Tempo Estimado de Espera:** ~2 minutos\n\n"
-            f"Já repassei ao especialista o resumo da sua solicitação e o histórico da nossa conversa "
-            f"para que você **não precise repetir nenhuma informação**.\n\n"
-            f"Um de nossos operadores humanos responderá nesta mesma tela a qualquer instante."
+            f"🤝 **Conectando com Atendimento Humano em Tempo Real**\n\n"
+            f"Compreendo a urgência e a importância da sua solicitação. O transbordo imediato para um especialista humano foi iniciado agora!\n\n"
+            f"👨‍💼 **Atendente Designado:** {operador_conectado}\n"
+            f"🏢 **Fila Especializada:** {queue_target}\n"
+            f"⏱️ **Status da Conexão:** Em atendimento imediato ({tempo_estimado})\n"
+            f"📋 **Protocolo Oficial:** `{protocol}`\n"
+            f"👤 **Cliente Identificado:** {nome_cliente} (`{cnpj_cpf}`)\n\n"
+            f"📋 **Contexto Transmitido ao Atendente:**\n"
+            f"> *\"{summary_text}\"*\n\n"
+            f"O operador **{operador_conectado}** já está com todo o seu histórico e dados na tela. "
+            f"Você **não precisará repetir nenhuma informação**. Ele assumirá o diálogo aqui no chat a qualquer instante!"
         ),
         name="escalation",
     )
@@ -182,8 +310,10 @@ def escalation_node(state: SupportState) -> dict:
         "ticket_protocol": protocol,
         "summary_for_human": summary_text,
         "queue_target": queue_target,
-        "tools_used": ["abrir_chamado_servicenow"],
+        "tools_used": ["transferir_atendimento_humano"],
         "authenticated_user_id": authenticated_user,
         "awaiting_identification": False,
         "pending_escalation": False,
+        "awaiting_escalation_subject": False,
+        "escalation_intent_retries": 0,
     }

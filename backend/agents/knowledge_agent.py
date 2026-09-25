@@ -58,7 +58,20 @@ def knowledge_node(state: SupportState, config: RunnableConfig) -> dict:
         messages=messages,
         agent_name="knowledge",
     )
+
+    originated_human = state.get("originated_from_human_intent") or state.get("awaiting_escalation_subject")
+    if originated_human and updated_messages:
+        last_m = updated_messages[-1]
+        if hasattr(last_m, "content") and last_m.content:
+            last_m.content += (
+                "\n\n---\n"
+                "💡 *Espero ter ajudado com essas informações! Se mesmo assim você ainda preferir falar com um especialista humano sobre esse assunto, "
+                "basta me avisar que realizo sua transferência imediatamente.*"
+            )
+
     return {
         "messages": updated_messages,
         "next_agent": "knowledge",
+        "awaiting_escalation_subject": False,
+        "originated_from_human_intent": True if originated_human else False,
     }
