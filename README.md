@@ -54,7 +54,7 @@ flowchart TD
 ### 4. Agente 4 — Agente de Escalonamento Humano (Human Escalation Agent)
 - **Papel:** Transferência assistida e contextualizada para operadores humanos (Human Handoff).
 - **Ferramentas:**
-  - `abrir_chamado_servicenow`: invocada automaticamente a cada transferência humana para abertura de chamado/incidente no ServiceNow.
+  - `transferir_atendimento_humano`: acionada automaticamente a cada transferência humana em tempo real com dados cadastrais e resumo executivo do caso para a estação de trabalho do atendente.
 
 ---
 

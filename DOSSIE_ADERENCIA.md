@@ -125,7 +125,7 @@ A solução adota o **LangGraph** como motor de orquestração com máquina de e
 - **Arquivo:** [`backend/agents/escalation_agent.py`](backend/agents/escalation_agent.py)
 - **Papel:** Conduz a transferência assistida e contextualizada para operadores humanos (Human Handoff), gerando protocolos auditáveis e sintetizando o caso para o atendente.
 - **Ferramentas (`ESCALATION_TOOLS`):**
-  1. `abrir_chamado_servicenow`: Invocada obrigatoriamente a cada escalonamento para registrar o chamado/incidente no ServiceNow com protocolo e sumarização do caso.
+  1. `transferir_atendimento_humano`: Invocada obrigatoriamente a cada escalonamento para conectar o operador humano em tempo real, transmitindo os dados cadastrais do cliente e a sumarização executiva do caso.
 
 ---
 
