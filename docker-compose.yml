@@ -10,14 +10,38 @@ services:
       - "8001:8001"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - AGENT_MODEL=${AGENT_MODEL:-gpt-4o}
+      - AGENT_MODEL=${AGENT_MODEL:-gpt-4o-mini}
+      - ROUTER_MODEL=${ROUTER_MODEL:-}
+      - SUPPORT_MODEL=${SUPPORT_MODEL:-}
+      - KNOWLEDGE_MODEL=${KNOWLEDGE_MODEL:-}
+      - ESCALATION_MODEL=${ESCALATION_MODEL:-}
       - VECTOR_DB=chroma
       - CHROMA_PERSIST_DIR=/app/bds/chroma_db
-      - RAG_ASYNC_URLS=${RAG_ASYNC_URLS:-https://www.getnet.eu/pt/suporte}
+      - RAG_ASYNC_URLS=${RAG_ASYNC_URLS:-https://www.getnet.eu/pt/suporte, https://site.getnet.com.br/get-ajuda/}
       - RAG_SYNC_URLS=${RAG_SYNC_URLS:-https://site.getnet.com.br/blog/}
       - RAG_CRAWLER_MAX_DEPTH=${RAG_CRAWLER_MAX_DEPTH:-2}
+      - RAG_CRAWLER_MAX_PAGES=${RAG_CRAWLER_MAX_PAGES:-100}
       - RAG_WEB_SYNC_CRON=${RAG_WEB_SYNC_CRON:-0 3 * * *}
     volumes:
       - ./bds:/app/bds
       - ./fonte_de_dados:/app/fonte_de_dados
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  frontend:
+    image: python:3.11-slim
+    container_name: getnet-multiagent-frontend
+    working_dir: /app
+    volumes:
+      - ./frontend:/app/frontend
+    ports:
+      - "3001:3001"
+    command: python -m http.server 3001 --directory /app/frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
