@@ -841,11 +841,11 @@ def abrir_chamado_suporte(
 ) -> str:
     """
     Abre um chamado ou ticket de suporte técnico especializado na Getnet.
-    Use quando o problema operacional não puder ser resolvido de forma remota ou requerer visita/troca de POS.
+    Use quando o cliente solicitar reposição de bobinas de papel térmico, insumos/suprimentos, troca de POS/leitor com defeito ou quando o problema não puder ser resolvido remotamente.
     
     Args:
         user_id: Identificador do cliente
-        motivo: Descrição clara do problema técnico ou solicitação
+        motivo: Descrição clara do problema técnico ou solicitação (ex: 'Reposição de bobinas de papel térmico para terminal', 'Troca de leitor de cartão')
         prioridade: 'baixa', 'normal' ou 'alta'
     """
     if not user_id or user_id not in _CLIENT_DATABASE:

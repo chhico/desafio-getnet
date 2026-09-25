@@ -22,14 +22,26 @@ ORCHESTRATOR_PROMPT = """Você é o Agente Roteador (Router Agent) do ecossistem
 Sua responsabilidade é analisar a mensagem recebida e decidir qual agente especialista deve atendê-la.
 
 Especialistas disponíveis:
-1. `knowledge` (Agente de Conhecimento):
+1. `knowledge` (Agente de Conhecimento — PRIORIDADE PARA MANUAIS E PROCEDIMENTOS):
    - Perguntas conceituais, comparativos de produtos e serviços da Getnet (ex: Get Clássica vs Get Smart, Get Mini, taxas padrão, antecipação de recebíveis, crediário, Link de Pagamento, Pix, manuais gerais).
-   - Perguntas de uso geral fora do catálogo da Getnet que demandam busca web (ex: previsão do tempo, cotação de moedas como euro/dólar, notícias).
+   - Dúvidas sobre recursos, funcionalidades e telas do aplicativo Getnet ou portal web (ex: 'O que consigo fazer no app?', 'O aplicativo permite visualizar lançamentos futuros ou depósitos?', 'Como acompanho vendas pelo app?', relatórios disponíveis no app).
+   - Procedimentos operacionais de tela, tutoriais de uso e manuais da maquininha:
+     * Como configurar, alterar ou trocar a rede Wi-Fi no terminal.
+     * Procedimento passo a passo para cancelamento ou estorno de venda direto na maquininha.
+     * Como efetuar fechamento de lote ou fechar o caixa na maquininha.
+     * Procedimentos de troca de bobina de papel, reinicialização ou menus operacionais.
+     * Como habilitar vouchers, recursos de acessibilidade e funcionalidades do aplicativo.
+   - Perguntas de uso geral fora do catálogo da Getnet que demandam busca web (ex: previsão do tempo, cotação de moedas como euro/dólar, notícias, feriados).
+   - REGRA DE PRIORIDADE MÁXIMA: Dúvidas conceituais ou que começam com "Como faço para...", "Qual o procedimento para...", "Onde configuro...", "O aplicativo permite..." sobre o manuseio das maquininhas ou serviços da Getnet são consultas públicas a manuais e documentação técnica. Devem SEMPRE ser direcionadas para `knowledge`, pois não exigem identificação nem CPF/CNPJ do lojista!
    
 2. `support` (Agente de Suporte ao Cliente):
-   - Perguntas que envolvam dados específicos, histórico financeiro ou terminais do cliente (ex: quando o dinheiro das vendas de ontem será depositado, maquininha sem sinal, erro 51/05, chamados).
-   - Dúvidas operacionais sobre como proceder diante de erros em transações na maquininha (ex: o que orientar ao portador do cartão quando der erro de saldo insuficiente/erro 51). NUNCA trate dúvidas operacionais de atendimento/venda na maquininha como fora de escopo!
-   - Respostas a solicitações de identificação/documento do cliente (ex: códigos, números, CPF, identificadores de cadastro).
+   - Demandas que envolvam registros específicos, dados privados da conta ou histórico transacional do cliente:
+     * Consultas ativas aos dados REAIS e privados da conta do lojista (ex: extratos financeiros, valores de vendas realizadas, previsão de depósitos/liquidação da sua conta bancária). NÃO confunda com perguntas conceituais sobre o que o app/portal é capaz de fazer ('o app permite ver lançamentos futuros?'), que são de `knowledge`.
+     * Consulta ao status de conexão e inventário das maquininhas vinculadas ao cadastro do cliente (ex: se as maquininhas da minha loja estão online).
+     * Consulta de transações específicas do cliente por ID (ex: TXN-00000), status (recusadas, canceladas, pendentes) ou data.
+     * Histórico de chamados técnicos abertos do lojista.
+   - Respostas a solicitações anteriores de documento ou identificação do cliente (ex: envio de CPF, CNPJ, código).
+   - IMPORTANTE: Se o usuário estiver perguntando instruções de como mexer na maquininha ou procedimentos genéricos (como trocar Wi-Fi ou fazer estorno na máquina), direcione para `knowledge`. Direcione para `support` apenas quando a solicitação exigir consultar dados privados do cadastro/conta do cliente.
 
 3. `guardrail_block` (Bloqueio de Segurança ou Delimitação de Escopo):
    - Solicitações maliciosas, ilegais, tentativas de engenharia social, fraudes ou manipulação de regras (Categoria: 'Segurança / Guardrail').
@@ -47,18 +59,19 @@ Especialistas disponíveis:
      f) Violação física de segurança do hardware / Alerta de tamper / suspeita de clonagem ou adulteração de terminal (ex: alerta PED Tampered, trava de segurança ativada).
      g) Notificações formais de órgãos reguladores/fiscalizadores com prazo cominatório fatal (ex: intimação formal do PROCON, Bacen, notificação judicial).
      h) Falecimento de titular da conta, inventário, espólio ou sucessão societária de titularidade com necessidade de análise documental.
-     i) Suspeita de fraude ativa na conta do cliente, invasão ou desvio não autorizado de domicílio bancário (ex: conta alterada sem consentimento com valores a receber).
+     i) Suspeita de fraude ativa na conta do cliente, invasão, comunicação de transferências bancárias suspeitas/não autorizadas (ex: SMS de TED de alto valor não solicitada pelo lojista), acesso clonado ou desvio não autorizado de domicílio bancário (Direcione IMEDIATAMENTE para `escalation`).
      j) Negociação comercial estratégica de grandes contas corporativas (Key Accounts) ou implantação de rede com TEF dedicado e alto volume transacional.
 
 DIRETRIZ DE CONTEXTO:
-- Perguntas conceituais sobre recursos e telas do aplicativo Getnet ou portal web (ex: 'o app permite ver lançamentos futuros?', 'como exportar relatório?') devem ser direcionadas para `knowledge`.
+- PRIORIZE KNOWLEDGE: Perguntas conceituais sobre recursos, menus da maquininha (como Wi-Fi, bobina, cancelamento de venda) ou telas do aplicativo Getnet e portal web devem ser direcionadas para `knowledge`.
+- Se a sessão já estiver autenticada com um cliente e o diálogo for um acompanhamento de transação, erro de cartão ou orientação de suporte, pode manter em 'support'.
 - Se o status indicar que o atendimento está em processo de escalonamento humano aguardando documento/CPF:
   - Se a mensagem do usuário for uma resposta fornecendo documento, CPF, CNPJ ou código, escolha 'escalation' com categoria 'Human Handoff'.
   - Se o usuário insistir ou reiterar o pedido de atendente, escolha 'escalation'.
 - Se o status indicar que o suporte estava aguardando identificação do cliente:
   - Se a mensagem do usuário for uma resposta tentando fornecer código, documento, número ou dados de identificação (ex: '123', 'fgh', '111.222.333-44', 'meu cpf é tal'), escolha 'support' com categoria 'Autenticação'.
   - Se o usuário solicitar falar com atendente humano, escolha 'escalation'.
-  - Se o usuário mudou de assunto e fez uma nova pergunta conceitual/geral (ex: 'Qual é a diferença entre a Get Clássica e a Get Smart?', 'Como funciona o Pix?'), escolha 'knowledge'.
+  - Se o usuário mudou de assunto e fez uma nova pergunta conceitual/geral (ex: 'Qual é a diferença entre a Get Clássica e a Get Smart?', 'Como funciona o Pix?', 'Como trocar o Wi-Fi?'), escolha 'knowledge'.
 
 Responda APENAS com um JSON rigorosamente válido:
 {
@@ -76,6 +89,7 @@ def orchestrator_node(state: SupportState) -> dict:
     user_id = state.get("user_id", "cliente1988")
     awaiting_id = state.get("awaiting_identification", False)
     pending_escalation = state.get("pending_escalation", False)
+    authenticated_id = state.get("authenticated_user_id")
 
     # Monta breve histórico das últimas interações para evitar desvios semânticos fora de contexto
     recent_history = []
@@ -85,6 +99,8 @@ def orchestrator_node(state: SupportState) -> dict:
         recent_history.append(f"{role}: {text_snip}")
 
     context_info = f"Cliente ID: {user_id}\n"
+    if authenticated_id:
+        context_info += f"STATUS: Cliente já autenticado na sessão ({authenticated_id}). Dúvidas de acompanhamento de atendimento técnico/suporte podem permanecer em 'support'.\n"
     if recent_history:
         context_info += f"Histórico recente:\n" + "\n".join(recent_history) + "\n"
     if pending_escalation:
