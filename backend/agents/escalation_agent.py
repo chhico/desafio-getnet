@@ -15,11 +15,12 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, Tool
 from backend.agents.state import SupportState, get_last_human_message
 from backend.agents.tools.escalation_tools import abrir_chamado_servicenow, ESCALATION_TOOLS
 from backend.agents.tools.support_tools import _CLIENT_DATABASE, buscar_cliente_por_documento
+from backend.core.config import settings
 from backend.core.llm_factory import get_agent_llm
 
 logger = logging.getLogger(__name__)
 
-llm = get_agent_llm(temperature=0)
+llm = get_agent_llm(temperature=0, model=settings.get_escalation_model())
 
 ESCALATION_SUMMARY_PROMPT = """Você é o Assistente de Triagem Técnica e Human Handoff da Getnet.
 Sua missão é analisar o histórico da conversa entre o cliente e os agentes automatizados e gerar uma síntese executiva para o operador humano que assumirá o atendimento.

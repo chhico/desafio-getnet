@@ -11,11 +11,12 @@ import json
 import logging
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from backend.agents.state import SupportState, get_last_human_message
+from backend.core.config import settings
 from backend.core.llm_factory import get_agent_llm
 
 logger = logging.getLogger(__name__)
 
-llm = get_agent_llm(temperature=0)
+llm = get_agent_llm(temperature=0, model=settings.get_router_model())
 
 ORCHESTRATOR_PROMPT = """Você é o Agente Roteador (Router Agent) do ecossistema de suporte da Getnet.
 
@@ -24,6 +25,7 @@ Sua responsabilidade é analisar a mensagem recebida e decidir qual agente espec
 Especialistas disponíveis:
 1. `knowledge` (Agente de Conhecimento — PRIORIDADE PARA MANUAIS E PROCEDIMENTOS):
    - Perguntas conceituais, comparativos de produtos e serviços da Getnet (ex: Get Clássica vs Get Smart, Get Mini, taxas padrão, antecipação de recebíveis, crediário, Link de Pagamento, Pix, manuais gerais).
+   - Regras comerciais e contratuais gerais: políticas de isenção de aluguel por faturamento, regras de meta de vendas, compra vs aluguel de terminal e tarifas de inatividade (ex: 'Se em um mês meu faturamento cair abaixo da meta, o que acontece?', 'Qual o faturamento mínimo para aluguel zero?', 'Existe taxa de inatividade?').
    - Dúvidas sobre recursos, funcionalidades e telas do aplicativo Getnet ou portal web (ex: 'O que consigo fazer no app?', 'O aplicativo permite visualizar lançamentos futuros ou depósitos?', 'Como acompanho vendas pelo app?', relatórios disponíveis no app).
    - Procedimentos operacionais de tela, tutoriais de uso e manuais da maquininha:
      * Como configurar, alterar ou trocar a rede Wi-Fi no terminal.
@@ -32,11 +34,11 @@ Especialistas disponíveis:
      * Procedimentos de troca de bobina de papel, reinicialização ou menus operacionais.
      * Como habilitar vouchers, recursos de acessibilidade e funcionalidades do aplicativo.
    - Perguntas de uso geral fora do catálogo da Getnet que demandam busca web (ex: previsão do tempo, cotação de moedas como euro/dólar, notícias, feriados).
-   - REGRA DE PRIORIDADE MÁXIMA: Dúvidas conceituais ou que começam com "Como faço para...", "Qual o procedimento para...", "Onde configuro...", "O aplicativo permite..." sobre o manuseio das maquininhas ou serviços da Getnet são consultas públicas a manuais e documentação técnica. Devem SEMPRE ser direcionadas para `knowledge`, pois não exigem identificação nem CPF/CNPJ do lojista!
+   - REGRA DE PRIORIDADE MÁXIMA: Dúvidas conceituais, cenários hipotéticos de regras ou dúvidas que começam com "Como faço para...", "Qual o procedimento para...", "Onde configuro...", "O aplicativo permite...", "Se o faturamento cair..." sobre o manuseio das maquininhas ou serviços da Getnet são consultas públicas a manuais e documentação técnica. Devem SEMPRE ser direcionadas para `knowledge`, pois não exigem identificação nem CPF/CNPJ do lojista!
    
 2. `support` (Agente de Suporte ao Cliente):
    - Demandas que envolvam registros específicos, dados privados da conta ou histórico transacional do cliente:
-     * Consultas ativas aos dados REAIS e privados da conta do lojista (ex: extratos financeiros, valores de vendas realizadas, previsão de depósitos/liquidação da sua conta bancária). NÃO confunda com perguntas conceituais sobre o que o app/portal é capaz de fazer ('o app permite ver lançamentos futuros?'), que são de `knowledge`.
+     * Consultas ativas aos dados REAIS e privados da conta do lojista (ex: extratos financeiros da minha loja, valores de vendas que eu realizei, previsão de depósitos/liquidação da sua conta bancária). NÃO confunda com perguntas conceituais ou regras hipotéticas de contrato ('se meu faturamento cair o que acontece?'), que são de `knowledge`.
      * Consulta ao status de conexão e inventário das maquininhas vinculadas ao cadastro do cliente (ex: se as maquininhas da minha loja estão online).
      * Consulta de transações específicas do cliente por ID (ex: TXN-00000), status (recusadas, canceladas, pendentes) ou data.
      * Histórico de chamados técnicos abertos do lojista.

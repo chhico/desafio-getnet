@@ -18,9 +18,10 @@ from backend.agents.tools.support_tools import (
     _CLIENT_DATABASE,
     buscar_cliente_por_documento,
 )
+from backend.core.config import settings
 from backend.core.llm_factory import get_agent_llm
 
-llm = get_agent_llm(temperature=0)
+llm = get_agent_llm(temperature=0, model=settings.get_support_model())
 llm_with_tools = llm.bind_tools(SUPPORT_TOOLS)
 
 SYSTEM_PROMPT = """Você é o Agente de Suporte ao Cliente (Customer Support Agent) da Getnet.

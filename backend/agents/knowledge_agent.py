@@ -12,9 +12,10 @@ from langchain_core.runnables import RunnableConfig
 from backend.agents.state import SupportState
 from backend.agents.agent_utils import run_agent_with_tools
 from backend.agents.tools.knowledge_tools import KNOWLEDGE_TOOLS
+from backend.core.config import settings
 from backend.core.llm_factory import get_agent_llm
 
-llm = get_agent_llm(temperature=0)
+llm = get_agent_llm(temperature=0, model=settings.get_knowledge_model())
 llm_with_tools = llm.bind_tools(KNOWLEDGE_TOOLS)
 
 SYSTEM_PROMPT = """Você é o Agente de Conhecimento (Knowledge Agent) oficial da Getnet.
