@@ -14,7 +14,7 @@ from langchain_openai import ChatOpenAI
 from backend.core.config import settings
 
 
-@lru_cache(maxsize=4)
+@lru_cache(maxsize=16)
 def get_agent_llm(temperature: float = 0.0, model: Optional[str] = None) -> ChatOpenAI:
     """
     Retorna uma instância única em cache do ChatOpenAI configurada com as credenciais do sistema.

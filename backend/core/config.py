@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 from pydantic_settings import BaseSettings
 from pydantic import Field
 
@@ -9,9 +10,25 @@ class Settings(BaseSettings):
     
     # LLM & Agente
     OPENAI_API_KEY: str = Field(..., env="OPENAI_API_KEY")
-    AGENT_MODEL: str = Field("gpt-4o", env="AGENT_MODEL")
+    AGENT_MODEL: str = Field("gpt-4o-mini", env="AGENT_MODEL")
+    ROUTER_MODEL: Optional[str] = Field(None, env="ROUTER_MODEL")
+    SUPPORT_MODEL: Optional[str] = Field(None, env="SUPPORT_MODEL")
+    KNOWLEDGE_MODEL: Optional[str] = Field(None, env="KNOWLEDGE_MODEL")
+    ESCALATION_MODEL: Optional[str] = Field(None, env="ESCALATION_MODEL")
     AGENT_TEMPERATURE: float = Field(0.0, env="AGENT_TEMPERATURE")
     AGENT_MAX_ITERATIONS: int = Field(10, env="AGENT_MAX_ITERATIONS")
+
+    def get_router_model(self) -> str:
+        return self.ROUTER_MODEL or self.AGENT_MODEL
+
+    def get_support_model(self) -> str:
+        return self.SUPPORT_MODEL or self.AGENT_MODEL
+
+    def get_knowledge_model(self) -> str:
+        return self.KNOWLEDGE_MODEL or self.AGENT_MODEL
+
+    def get_escalation_model(self) -> str:
+        return self.ESCALATION_MODEL or self.AGENT_MODEL
     
     # Seguran\u00e7a (Removida conforme solicita\u00e7\u00e3o)
     # API_SECRET_KEY: str = Field(..., env="API_SECRET_KEY")
