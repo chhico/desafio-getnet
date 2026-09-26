@@ -87,7 +87,9 @@ INSISTENCE_KEYWORDS = [
     "quero falar com humano", "quero atendente", "quero pessoa", "me passa logo",
     "me passa pro atendente", "apenas transfira", "só transfere", "so transfere",
     "humano agora", "pessoa de verdade", "não me interessa", "fale com humano",
-    "supervisor", "supervisora", "atendente de verdade"
+    "supervisor", "supervisora", "atendente de verdade",
+    "falar com atendente", "falar com humano", "prefiro humano", "com um humano",
+    "falar com uma pessoa", "me atenda um humano", "passa para humano"
 ]
 
 
@@ -124,6 +126,7 @@ def escalation_node(state: SupportState) -> dict:
     pending_escalation = state.get("pending_escalation", False)
     retries = state.get("escalation_intent_retries", 0) or 0
     awaiting_subject = state.get("awaiting_escalation_subject", False)
+    had_self_service = state.get("had_self_service_attempt", False)
 
     # -----------------------------------------------------------------------
     # 1. Verificação de Incidente Crítico (Fast-Track)
@@ -134,7 +137,7 @@ def escalation_node(state: SupportState) -> dict:
     # Se NÃO for incidente crítico e NÃO estiver aguardando documento pós-confirmação:
     if not is_critical and not pending_escalation:
         # Nível 1 de Triagem: primeiro pedido de humano
-        if retries == 0:
+        if retries == 0 and not had_self_service:
             msg_triagem_1 = AIMessage(
                 content=(
                     "Com certeza posso transferir você para um especialista humano! 😊\n\n"
@@ -153,8 +156,8 @@ def escalation_node(state: SupportState) -> dict:
                 "originated_from_human_intent": True,
             }
 
-        # Nível 2 de Triagem: cliente insiste no humano sem informar assunto e sem ter enviado documento
-        elif retries == 1 and not has_doc and (awaiting_subject or is_human_insistence(last_user_message)):
+        # Nível 2 de Triagem: cliente insiste no humano sem informar assunto e sem ter tentado autoatendimento
+        elif retries == 1 and not has_doc and is_human_insistence(last_user_message) and awaiting_subject and not had_self_service:
             msg_triagem_2 = AIMessage(
                 content=(
                     "Entendo perfeitamente sua preferência! Mas vale lembrar que por aqui eu consigo consultar seus dados cadastrais, extratos, transações e tirar dúvidas técnicas instantaneamente, sem nenhum tempo de espera em fila de atendimento.\n\n"
@@ -189,7 +192,7 @@ def escalation_node(state: SupportState) -> dict:
                     content=(
                         f"❌ **Documento não localizado:**\n\n"
                         f"Não encontramos nenhum cadastro ativo com o documento/identificador informado (`{last_user_message}`).\n\n"
-                        f"Por favor, verifique os dados e informe novamente seu **documento (CPF/CNPJ)** para podermos transferir seu atendimento com segurança."
+                        f"Por favor, verifique os dados e informe novamente seu **documento (CPF, CNPJ ou código de cliente como 'cliente2024')** para podermos transferir seu atendimento com segurança."
                     ),
                     name="escalation",
                 )
@@ -206,7 +209,7 @@ def escalation_node(state: SupportState) -> dict:
                 content=(
                     "Compreendo a necessidade de atendimento especializado. Para transferir você para o "
                     "especialista adequado e vincular o protocolo oficial ao seu cadastro com total segurança, "
-                    "por favor confirme seu **documento (CPF ou CNPJ)**:"
+                    "por favor confirme seu **documento (CPF, CNPJ ou código de cliente)**:"
                 ),
                 name="escalation",
             )

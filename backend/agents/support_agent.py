@@ -110,6 +110,7 @@ def support_node(state: SupportState, config: RunnableConfig) -> dict:
             "authenticated_user_id": authenticated_user_id,
             "awaiting_escalation_subject": False,
             "originated_from_human_intent": True if originated_human else False,
+            "had_self_service_attempt": True if originated_human else False,
         }
 
     # -----------------------------------------------------------------------
@@ -153,8 +154,8 @@ def support_node(state: SupportState, config: RunnableConfig) -> dict:
             if hasattr(last_m, "content") and last_m.content:
                 last_m.content += (
                     "\n\n---\n"
-                    "💡 *Espero ter ajudado com essas informações! Se mesmo assim você ainda preferir falar com um especialista humano sobre esse assunto, "
-                    "basta me avisar que realizo sua transferência imediatamente.*"
+                    "💡 *Consegui consultar esses dados para você! Se isso responder sua dúvida, você já tem a informação sem precisar aguardar na fila de transferência.*  \n"
+                    "*Caso ainda prefira falar com um especialista humano sobre esse assunto, basta me avisar que realizo sua transferência imediatamente.*"
                 )
 
         return {
@@ -165,6 +166,7 @@ def support_node(state: SupportState, config: RunnableConfig) -> dict:
             "pending_support_query": None,
             "awaiting_escalation_subject": False,
             "originated_from_human_intent": True if originated_human else False,
+            "had_self_service_attempt": True if originated_human else False,
         }
 
     # Se NÃO encontrou o cliente e já estava aguardando identificação:

@@ -60,18 +60,52 @@ def knowledge_node(state: SupportState, config: RunnableConfig) -> dict:
     )
 
     originated_human = state.get("originated_from_human_intent") or state.get("awaiting_escalation_subject")
+    had_self_service = False
+    pending_escalation = False
+    awaiting_identification = False
+    category = "Conhecimento / Procedimentos"
+    next_agent = "knowledge"
+
     if originated_human and updated_messages:
         last_m = updated_messages[-1]
         if hasattr(last_m, "content") and last_m.content:
-            last_m.content += (
-                "\n\n---\n"
-                "💡 *Espero ter ajudado com essas informações! Se mesmo assim você ainda preferir falar com um especialista humano sobre esse assunto, "
-                "basta me avisar que realizo sua transferência imediatamente.*"
+            content_lower = last_m.content.lower()
+            no_info_found = (
+                "nenhuma informação" in content_lower
+                or "não encontrei" in content_lower
+                or "não foi possível localizar" in content_lower
+                or "não foram encontradas" in content_lower
+                or "não possuo informações" in content_lower
+                or "não há informações" in content_lower
             )
+            if no_info_found:
+                # Se não tiver resposta nas bases, nem precisa o cliente pedir uma segunda vez!
+                # Já transborda diretamente para o especialista humano solicitando documento
+                last_m.content = (
+                    "Não localizamos um procedimento de autoatendimento para esta solicitação específica em nossa base técnica.\n\n"
+                    "Como você já havia solicitado atendimento humano, vou direcionar seu atendimento imediatamente para um de nossos especialistas! "
+                    "Para vincular o protocolo oficial ao seu cadastro com total segurança, por favor confirme seu **documento (CPF, CNPJ ou código de cliente)**:"
+                )
+                next_agent = "escalation"
+                category = "Human Handoff / Escalonamento"
+                pending_escalation = True
+                awaiting_identification = True
+                had_self_service = True
+            else:
+                last_m.content += (
+                    "\n\n---\n"
+                    "💡 *Consegui localizar essas orientações oficiais em nossa base! Se isso resolver seu problema, você já pode continuar utilizando sua maquininha sem tempo de espera na fila.*  \n"
+                    "*Caso ainda prefira falar com um especialista humano sobre esse assunto, basta me avisar que realizo sua transferência imediatamente.*"
+                )
+                had_self_service = True
 
     return {
         "messages": updated_messages,
-        "next_agent": "knowledge",
+        "next_agent": next_agent,
+        "category": category,
         "awaiting_escalation_subject": False,
         "originated_from_human_intent": True if originated_human else False,
+        "had_self_service_attempt": had_self_service,
+        "pending_escalation": pending_escalation,
+        "awaiting_identification": awaiting_identification,
     }
