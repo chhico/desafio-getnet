@@ -10,7 +10,7 @@ const MarkdownRenderer = ({ content }) => {
     // Processa formatação inline (negrito, itálico, código)
     const renderInline = (text) => {
         if (!text) return null;
-        
+
         // Regex para capturar `code`, **bold**, *italic*
         const parts = [];
         let remaining = text;
@@ -225,11 +225,11 @@ const SUGGESTIONS = [
         query: "Minha maquininha Get Smart apresentou erro de leitura e não conecta no Wi-Fi."
     },
     {
-        id: "sug-humano",
-        icon: "🤝",
-        title: "Atendente Humano",
-        desc: "Solicitar transferência especializada",
-        query: "Gostaria de falar com um atendente humano."
+        id: "sug-transacoes",
+        icon: "🧾",
+        title: "Consultar Transações",
+        desc: "Status por ID (TXN) ou motivo de recusa",
+        query: "Gostaria de consultar o status de uma transação ou entender o motivo de uma venda recusada."
     }
 ];
 
@@ -343,8 +343,8 @@ const Dashboard = () => {
         setSessions(prev => prev.map(s => {
             if (s.id === targetSessionId) {
                 const isFirst = s.messages.length === 0;
-                const autoTitle = isFirst 
-                    ? (trimmed.length > 28 ? trimmed.substring(0, 26) + "..." : trimmed) 
+                const autoTitle = isFirst
+                    ? (trimmed.length > 28 ? trimmed.substring(0, 26) + "..." : trimmed)
                     : s.title;
                 return {
                     ...s,
