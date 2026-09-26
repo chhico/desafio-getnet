@@ -61,6 +61,7 @@ class SupportState(TypedDict):
     escalation_intent_retries: int | None
     awaiting_escalation_subject: bool | None
     originated_from_human_intent: bool | None
+    had_self_service_attempt: bool | None
 
     # Observabilidade / Rastreabilidade de Ferramentas
     tools_used: list[str] | None

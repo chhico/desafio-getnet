@@ -11,6 +11,7 @@ import json
 import logging
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from backend.agents.state import SupportState, get_last_human_message
+from backend.agents.escalation_agent import is_human_insistence
 from backend.core.config import settings
 from backend.core.llm_factory import get_agent_llm
 
@@ -94,6 +95,43 @@ def orchestrator_node(state: SupportState) -> dict:
     authenticated_id = state.get("authenticated_user_id")
     awaiting_subject = state.get("awaiting_escalation_subject", False)
 
+    # 1. Se estiver em processo de escalonamento humano aguardando documento do cliente
+    if pending_escalation:
+        cancela_keywords = ["cancela", "cancelar", "não precisa mais", "nao precisa mais", "desisti", "deixa pra lá", "deixa pra la", "esquece"]
+        if not any(kw in (last_message or "").lower() for kw in cancela_keywords):
+            logger.info("Roteamento determinístico: pending_escalation ativo -> escalation")
+            return {
+                "next_agent": "escalation",
+                "category": "Human Handoff",
+                "routing_reason": "Escalonamento humano em andamento: identificação ou confirmação para transferência",
+            }
+        else:
+            state["pending_escalation"] = False
+            pending_escalation = False
+
+    # 2. Se o atendimento estiver aguardando o assunto da triagem de escalonamento humano (Nível 1)
+    if awaiting_subject:
+        from backend.agents.escalation_agent import is_critical_incident
+        if is_human_insistence(last_message or ""):
+            logger.info("Roteamento determinístico: insistência em humano durante triagem de assunto -> escalation")
+            return {
+                "next_agent": "escalation",
+                "category": "Human Handoff",
+                "routing_reason": "Insistência em atendimento humano durante triagem de assunto",
+                "awaiting_escalation_subject": True,
+            }
+        elif is_critical_incident(last_message or "", messages):
+            logger.info("Roteamento determinístico: incidente crítico relatado durante triagem -> escalation")
+            return {
+                "next_agent": "escalation",
+                "category": "Human Handoff",
+                "routing_reason": "Incidente crítico relatado durante triagem de assunto",
+                "awaiting_escalation_subject": False,
+            }
+        else:
+            # Usuário informou o assunto/problema. Limpa a espera de assunto para que o roteador avalie o tema livremente
+            awaiting_subject = False
+
     # Monta breve histórico das últimas interações para evitar desvios semânticos fora de contexto
     recent_history = []
     for m in messages[-4:-1]:
@@ -106,17 +144,15 @@ def orchestrator_node(state: SupportState) -> dict:
         context_info += f"STATUS: Cliente já autenticado na sessão ({authenticated_id}). Dúvidas de acompanhamento de atendimento técnico/suporte podem permanecer em 'support'.\n"
     if recent_history:
         context_info += f"Histórico recente:\n" + "\n".join(recent_history) + "\n"
-    if awaiting_subject:
+    if state.get("awaiting_escalation_subject"):
         context_info += (
-            "STATUS: O assistente acolheu o pedido de atendimento humano e perguntou ao cliente qual é o assunto ou problema para triagem e agilização.\n"
-            "DIRETRIZ DESTE ESTADO:\n"
-            "  - Se o usuário explicar o assunto/problema (ex: extratos, dados privados, transações, manuais, taxas, Wi-Fi):\n"
-            "    * Direcione para 'support' se envolver dados privados da conta, extratos ou transações do lojista.\n"
-            "    * Direcione para 'knowledge' se envolver procedimentos conceituais, manuais, taxas gerais, Wi-Fi ou produtos Getnet.\n"
-            "  - Se o usuário NÃO explicar o assunto e insistir/reiterar que quer falar com atendente humano/pessoa/supervisor ou recusar falar com robô, direcione para 'escalation'.\n"
+            "STATUS: O cliente havia solicitado atendente humano e agora respondeu qual é o seu assunto ou problema.\n"
+            "DIRETRIZ OBRIGATÓRIA DE AUTOATENDIMENTO INTELIGENTE (SMART DEFLECTION):\n"
+            "  - O objetivo é tentar resolver o problema do cliente consultando a base oficial da Getnet antes de fazer o transbordo!\n"
+            "  - Para procedimentos técnicos de maquininha (como bobina entupida, troca de bobina, Wi-Fi, travamento, menus operacionais, estorno) ou manuais de produtos Getnet: direcione OBRIGATORIAMENTE para 'knowledge'.\n"
+            "  - Para consultas a dados privados, transações ou extratos da conta do cliente: direcione para 'support'.\n"
+            "  - NUNCA escolha 'escalation' aqui para procedimentos e dúvidas que possam ser respondidos por 'knowledge' ou 'support'!\n"
         )
-    elif pending_escalation:
-        context_info += "STATUS: O atendimento está em processo de escalonamento humano aguardando o documento/CPF do cliente.\n"
     elif awaiting_id:
         context_info += "STATUS: O suporte solicitou anteriormente a identificação (documento/CPF) do cliente.\n"
     context_info += f"Mensagem atual do usuário: {last_message}"
@@ -148,6 +184,10 @@ def orchestrator_node(state: SupportState) -> dict:
         "category": category,
         "routing_reason": reason,
     }
+
+    # Se o usuário informou o assunto durante a triagem, limpa o estado de espera
+    if not awaiting_subject and state.get("awaiting_escalation_subject"):
+        result["awaiting_escalation_subject"] = False
 
     # Se o usuário estava aguardando identificação mas decidiu mudar de assunto para o conhecimento geral,
     # limpamos o estado de espera para liberar a conversa
