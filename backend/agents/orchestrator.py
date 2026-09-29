@@ -83,7 +83,7 @@ DIRETRIZ DE CONTEXTO:
   - Se o usuário mudou de assunto e fez uma nova pergunta conceitual/geral (ex: 'Qual é a diferença entre a Get Clássica e a Get Smart?', 'Como funciona o Pix?', 'Como trocar o Wi-Fi?'), escolha 'knowledge'.
 
 DIRETRIZ DE ANCORAGEM TEMPORAL:
-- Data de Referência do Sistema: 23 de setembro de 2026.
+- {contexto_temporal}
 - Acompanhamentos de fechamento de vendas recentes ('ontem', 'vendas recentes', 'quais valores?') de clientes autenticados pertencem a 'support'.
 
 Responda APENAS com um JSON rigorosamente válido:
@@ -187,9 +187,9 @@ def orchestrator_node(state: SupportState) -> dict:
     elif awaiting_id:
         context_info += "STATUS: O suporte solicitou anteriormente a identificação (documento/CPF) do cliente.\n"
     context_info += f"Mensagem atual do usuário: {last_message}"
-
+    
     response = llm.invoke([
-        SystemMessage(content=ORCHESTRATOR_PROMPT),
+        SystemMessage(content=ORCHESTRATOR_PROMPT.replace("{contexto_temporal}", get_system_clock_context())),
         HumanMessage(content=context_info),
     ])
 
