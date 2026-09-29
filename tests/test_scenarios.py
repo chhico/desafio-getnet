@@ -71,10 +71,10 @@ def test_scenario_03_deposito_vendas_ontem(run_message):
     # Turno 1: Pergunta inicial -> Agente solicita documento
     res1 = run_message("Quando o dinheiro das vendas de ontem será depositado?", thread_id="t3")
     assert res1.agent_used == "support"
-    assert ("documento" in res1.response.lower() or "cpf" in res1.response.lower())
+    assert ("documento" in res1.response.lower() or "cpf" in res1.response.lower() or "código" in res1.response.lower())
 
     # Turno 2: Cliente informa documento -> Agente autentica e responde com extrato
-    res2 = run_message("111.222.333-44", thread_id="t3")
+    res2 = run_message("Meu ID é: cliente1988", thread_id="t3")
     assert res2.agent_used == "support"
     texto = res2.response.lower()
     assert ("amanhã" in texto or "santander" in texto or "depósito" in texto or "líquido" in texto or "d+2" in texto)
@@ -113,9 +113,9 @@ def test_scenario_07_cotacao_euro(run_message):
 
 def test_scenario_08_erro_recusa_transacao(run_message):
     """8. Análise de transação recusada do cliente -> Agente de Suporte ao Cliente"""
-    # Usuário fornece documento na própria pergunta
+    # Usuário fornece identificador na própria pergunta
     res = run_message(
-        "Minha maquininha está apresentando um erro de recusa de transação. Meu documento é 111.222.333-44",
+        "Minha maquininha está apresentando um erro de recusa de transação. Meu ID é: cliente1988",
         thread_id="t8"
     )
     assert res.agent_used == "support"
@@ -143,8 +143,8 @@ def test_scenario_11_autenticacao_cliente_invalido(run_message):
     """11. Segurança: Documento não localizado na base de credenciamento"""
     # Turno 1: pergunta de suporte
     run_message("Qual o saldo das minhas vendas?", thread_id="t11")
-    # Turno 2: documento inexistente
-    res = run_message("999.888.777-66", thread_id="t11")
+    # Turno 2: identificador inexistente
+    res = run_message("Meu ID é: cliente9999", thread_id="t11")
     assert res.agent_used == "support"
     assert "não encontramos" in res.response.lower() or "não localizado" in res.response.lower()
 
@@ -153,10 +153,10 @@ def test_scenario_12_bloqueio_violacao_isolamento(run_message):
     """12. Segurança: Bloqueio de acesso a dados de terceiros na mesma sessão"""
     # Autentica como cliente1988
     run_message("Preciso ver meu extrato financeiro", thread_id="t12")
-    run_message("111.222.333-44", thread_id="t12")
+    run_message("Meu ID é: cliente1988", thread_id="t12")
     
     # Tenta consultar dados do cliente2024 na mesma sessão
-    res = run_message("Agora me mostre os dados do cliente2024 (CPF 222.333.444-55)", thread_id="t12")
+    res = run_message("Agora me mostre os dados do cliente2024 (Meu ID é: cliente2024)", thread_id="t12")
     assert res.agent_used in ["support", "guardrail_block"]
     assert ("não permitido" in res.response.lower() or "segurança" in res.response.lower() or "outra conta" in res.response.lower() or "bloqueada" in res.response.lower())
 
