@@ -6,7 +6,7 @@ from langchain_core.messages import HumanMessage, AIMessage
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from backend.agents.graph import support_graph
-from backend.core.config import settings
+from backend.services.conversation_service import ConversationService
 
 def main():
     print("=" * 60)
@@ -15,10 +15,6 @@ def main():
     print("=" * 60)
 
     thread_id = "cli_session_001"
-    config = {
-        "configurable": {"thread_id": thread_id},
-        "recursion_limit": settings.AGENT_MAX_ITERATIONS,
-    }
 
     while True:
         try:
@@ -31,22 +27,17 @@ def main():
             if not user_input:
                 continue
 
-            print(f"[Sistema]: Processando com recursion_limit={settings.AGENT_MAX_ITERATIONS}...")
-
-            # Invovação do grafo (mesma lógica do ConversationService)
-            result = support_graph.invoke(
-                {"messages": [HumanMessage(content=user_input)]},
-                config=config,
+            response = ConversationService.process_message(
+                graph=support_graph,
+                user_id="cliente1988",
+                message_content=user_input,
+                thread_id=thread_id,
+                channel="cli",
             )
 
-            # Extração da resposta
-            all_msgs = result.get("messages", [])
-            ai_msg = next((m.content for m in reversed(all_msgs) if isinstance(m, AIMessage)), 
-                         "IA processou a mensagem mas não gerou resposta textual.")
-            
-            agent_used = result.get("next_agent", "unknown")
-
-            print(f"\n[Agente ({agent_used})]: {ai_msg}")
+            print(f"\n[Agente ({response.agent_used})]: {response.response}")
+            if response.tools_used:
+                print(f"[Ferramentas usadas]: {', '.join(response.tools_used)}")
             print("-" * 40)
 
         except KeyboardInterrupt:
