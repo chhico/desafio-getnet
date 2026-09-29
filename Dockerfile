@@ -1,5 +1,5 @@
 # Build Stage
-FROM python:3.11-slim as builder
+FROM python:3.11-slim AS builder
 
 WORKDIR /app
 
@@ -33,12 +33,12 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 
 COPY . .
 
-# Criar pastas para bancos vetoriais e fontes de dados
+# Garante criação das pastas de persistência montadas por volumes
 RUN mkdir -p /app/bds /app/fonte_de_dados
 
 EXPOSE 8001
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
   CMD curl -f http://localhost:8001/health || exit 1
 
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8001"]
