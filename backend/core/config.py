@@ -48,10 +48,15 @@ class Settings(BaseSettings):
     RAG_CRAWLER_MAX_PAGES: int = Field(100, env="RAG_CRAWLER_MAX_PAGES")
     RAG_WEB_SYNC_CRON: str = Field("0 3 * * *", env="RAG_WEB_SYNC_CRON")
 
-    # LangChain
+    # LangChain / LangSmith Tracing
     LANGCHAIN_TRACING_V2: str = Field("false", env="LANGCHAIN_TRACING_V2")
+    LANGSMITH_TRACING: Optional[str] = Field(None, env="LANGSMITH_TRACING")
     LANGCHAIN_API_KEY: str = Field("", env="LANGCHAIN_API_KEY")
+    LANGSMITH_API_KEY: Optional[str] = Field(None, env="LANGSMITH_API_KEY")
     LANGCHAIN_PROJECT: str = Field("desafio-get", env="LANGCHAIN_PROJECT")
+    LANGSMITH_PROJECT: Optional[str] = Field(None, env="LANGSMITH_PROJECT")
+    LANGCHAIN_ENDPOINT: Optional[str] = Field("https://api.smith.langchain.com", env="LANGCHAIN_ENDPOINT")
+    LANGSMITH_ENDPOINT: Optional[str] = Field(None, env="LANGSMITH_ENDPOINT")
     
     # CORS
     BACKEND_CORS_ORIGINS: list[str] = ["*"]
@@ -63,10 +68,32 @@ class Settings(BaseSettings):
 
     def validate_keys(self) -> None:
         if not self.OPENAI_API_KEY:
-            raise ValueError("OPENAI_API_KEY \u00e9 obrigat\u00f3ria.")
+            raise ValueError("OPENAI_API_KEY é obrigatória.")
 
 settings = Settings()
+
+# Propaga automaticamente para o os.environ (mandatório para o LangChainTracer interceptar as execuções)
+tracing_enabled = (settings.LANGCHAIN_TRACING_V2.lower() == "true") or (
+    settings.LANGSMITH_TRACING and settings.LANGSMITH_TRACING.lower() == "true"
+)
+api_key = settings.LANGCHAIN_API_KEY or settings.LANGSMITH_API_KEY or ""
+project = settings.LANGSMITH_PROJECT or settings.LANGCHAIN_PROJECT or "desafio-get"
+endpoint = settings.LANGSMITH_ENDPOINT or settings.LANGCHAIN_ENDPOINT or "https://api.smith.langchain.com"
+
+if tracing_enabled:
+    os.environ["LANGCHAIN_TRACING_V2"] = "true"
+    os.environ["LANGSMITH_TRACING"] = "true"
+if api_key:
+    os.environ["LANGCHAIN_API_KEY"] = api_key
+    os.environ["LANGSMITH_API_KEY"] = api_key
+if project:
+    os.environ["LANGCHAIN_PROJECT"] = project
+    os.environ["LANGSMITH_PROJECT"] = project
+if endpoint:
+    os.environ["LANGCHAIN_ENDPOINT"] = endpoint
+    os.environ["LANGSMITH_ENDPOINT"] = endpoint
 
 # Criar os diretórios necessários
 for folder in ["bds", "fonte_de_dados"]:
     os.makedirs(folder, exist_ok=True)
+

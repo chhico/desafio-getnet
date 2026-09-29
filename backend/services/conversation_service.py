@@ -1,7 +1,9 @@
+import time
 from typing import Tuple, Optional
 from langchain_core.messages import HumanMessage, AIMessage
 from backend.domain.schemas import ChatResponse
 from backend.core.config import settings
+from backend.infrastructure.telemetry import telemetry_collector
 
 class ConversationService:
     @staticmethod
@@ -17,6 +19,8 @@ class ConversationService:
             "recursion_limit": settings.AGENT_MAX_ITERATIONS,
         }
 
+        start_time = time.perf_counter()
+
         # Invoca o grafo passando user_id e a mensagem
         result = graph.invoke(
             {
@@ -25,6 +29,8 @@ class ConversationService:
             },
             config=config,
         )
+
+        latency_ms = (time.perf_counter() - start_time) * 1000.0
 
         # Extração da resposta textual final
         all_msgs = result.get("messages", [])
@@ -35,6 +41,18 @@ class ConversationService:
         
         agent_used = result.get("next_agent", "unknown")
         category = result.get("category", "Geral")
+
+        # Registrar telemetria em tempo real
+        try:
+            telemetry_collector.record_turn(
+                agent_used=agent_used,
+                latency_ms=latency_ms,
+                is_safe=result.get("is_safe", True),
+                guardrail_reason=result.get("guardrail_reason"),
+                category=category
+            )
+        except Exception:
+            pass
 
         # Extrai ferramentas utilizadas exclusivamente no turno atual
         last_human_idx = -1
@@ -63,3 +81,4 @@ class ConversationService:
             category=category,
             tools_used=tools_used,
         )
+

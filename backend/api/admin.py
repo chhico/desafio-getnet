@@ -169,3 +169,20 @@ async def trigger_web_sync(
         **result
     }
 
+
+from backend.infrastructure.telemetry import telemetry_collector
+
+@router.get("/dashboard-stats", tags=["Admin"])
+async def get_dashboard_stats(
+    mode: str = Query(
+        "production",
+        description="Modo dos dados: 'production' para dados 100% reais ou 'development' para baseline simulado"
+    )
+):
+    """
+    Retorna métricas em tempo real e KPIs para o Dashboard de Observabilidade do Getnet Multi-Agent.
+    """
+    return telemetry_collector.get_stats(mode=mode)
+
+
+
