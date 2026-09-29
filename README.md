@@ -1,18 +1,18 @@
 # Getnet Multi-Agent Customer Support System 🚀
 
-Sistema multiagente corporativo construído com **LangGraph**, **FastAPI**, **LangChain**, **ChromaDB** e **OpenAI**, desenvolvido para atender com excelência técnica, resiliência e conformidade integral ao desafio **Engenheiro de IA (Nível Avançado) – Sistema de Suporte Multiagente da Getnet**.
+Sistema multiagente corporativo de alta performance construído com **LangGraph**, **FastAPI**, **LangChain**, **ChromaDB** e **OpenAI**, desenvolvido para atender com excelência técnica, resiliência e conformidade integral ao desafio **Engenheiro de IA (Nível Avançado) – Sistema de Suporte Multiagente da Getnet**.
 
 ---
 
 ## 🏛️ Arquitetura e Orquestração Multiagente
 
-O sistema adota um padrão de orquestração avançado com **Guardrails de Segurança**, **Roteador Semântico** e **3 Agentes Especialistas Cooperativos**, além de retenção de memória conversacional multi-turnos com `MemorySaver`:
+O sistema adota um padrão de orquestração avançado com **Guardrails de Segurança**, **Roteador Semântico com Ancoragem Temporal Dinâmica** e **3 Agentes Especialistas Cooperativos**, além de retenção de memória conversacional multi-turnos com `MemorySaver`:
 
 ```mermaid
 flowchart TD
-    User([Usuário / Cliente]) -->|POST /api/v1/chat| API[FastAPI Endpoint]
-    API --> Service[ConversationService]
-    Service --> Graph[LangGraph StateGraph]
+    User([Usuário / Cliente]) -->|POST /api/v1/chat| API[FastAPI Router<br/>backend/api/conversations.py]
+    API --> Service[ConversationService<br/>backend/services/conversation_service.py]
+    Service --> Graph[LangGraph StateGraph<br/>backend/agents/graph.py]
     
     Graph --> Guardrail[Guardrails de Segurança<br/>guardrail_node]
     Guardrail -->|Violação / Prompt Injection| Block[Resposta de Bloqueio Seguro]
@@ -45,7 +45,8 @@ flowchart TD
     Knowledge --> Response([Resposta Unificada ao Cliente])
     Support --> Response
     Escalation --> Response
-    Response --> END
+    Response --> Telemetry[Telemetria & Observabilidade<br/>telemetry_collector]
+    Telemetry --> END
 ```
 
 ---
@@ -54,16 +55,18 @@ flowchart TD
 
 ### 🛡️ Camada de Guardrails de Segurança (`guardrail_node`)
 - **Papel:** Primeira barreira de defesa de entrada do sistema.
-- **Mecanismo:** Analisa a mensagem do usuário contra tentativas de *prompt injection*, *jailbreaks*, extração de instruções internas do sistema (*system prompt leak*), toxicidade e menções desrespeitosas.
-- **Comportamento:** Se for detectada violação, redireciona deterministicamente para encerramento com mensagem institucional segura, sem consumir tempo ou contexto dos especialistas.
+- **Mecanismo:** Analisa a mensagem do usuário contra tentativas de *prompt injection*, *jailbreaks*, extração de instruções internas do sistema (*system prompt leak*), toxicidade e termos abusivos.
+- **Comportamento:** Se for detectada violação, encerra o grafo deterministicamente com mensagem institucional segura, sem consumir tokens adicionais nem expor os especialistas.
 
 ### 🧭 Agente 1 — Agente Roteador (`orchestrator_node`)
 - **Papel:** Ponto de entrada da orquestração inteligente e orquestrador de turnos.
-- **Mecanismo:** Analisa a semântica da solicitação, o histórico multi-turnos e o identificador do cliente (`user_id`) para decidir deterministicamente qual especialista deve atender o turno (`knowledge`, `support` ou `escalation`), **sem gerar respostas conversacionais diretas nem chamar ferramentas**, mantendo a separação estrita de responsabilidades.
-- **Inteligência de Escalonamento:** Caso o usuário mencione apenas *"quero falar com humano"*, orienta o cliente a informar o assunto para que o sistema possa ajudá-lo ou direcioná-lo ao especialista certo; caso o cliente insista, confirme a necessidade ou relate problemas graves, aciona imediatamente o Agente de Escalonamento.
+- **Mecanismo:** Analisa a semântica da solicitação, o histórico multi-turnos e o identificador do cliente (`user_id`) para decidir deterministicamente qual especialista deve atender o turno (`knowledge`, `support` ou `escalation`), **sem gerar respostas conversacionais diretas nem chamar ferramentas**, garantindo separação estrita de responsabilidades.
+- **Ancoragem Temporal Dinâmica e Agnóstica:** Integra dinamicamente a função `get_system_clock_context()`, injetando dia da semana, data atual e ano do sistema em tempo real. Permite que consultas relativas ("vendas de ontem", "previsão do tempo para amanhã", "fechamento recente") sejam roteadas de forma precisa e sem nenhuma data fixa (*hardcoded*).
+- **Inteligência de Escalonamento:** Caso o usuário mencione apenas *"quero falar com humano"*, orienta o cliente a informar o assunto para que o sistema possa ajudá-lo ou direcioná-lo ao especialista certo; caso o cliente insista, confirme a necessidade ou relate problemas críticos, aciona imediatamente o Agente de Escalonamento.
 
 ### 🧠 Agente 2 — Agente de Conhecimento (`knowledge_node`)
 - **Papel:** Responde dúvidas institucionais, catálogo de maquininhas, taxas, crediário, Pix, antecipação e perguntas gerais de mundo aberto com arquitetura *Cache-First e Live Web Fallback*.
+- **Citação Obrigatória de Fontes:** Toda resposta fundamentada em documentação oficial cita explicitamente arquivos ou URLs consultadas no rodapé.
 - **Ferramentas (`KNOWLEDGE_TOOLS`):**
   1. `consultar_base_local_getnet`: RAG vetorial no ChromaDB persistente com dados de documentos oficiais locais e URLs sincronizadas via crawler.
   2. `consultar_base_web_getnet`: Varredura em tempo real nas páginas e subpáginas dos portais oficiais Getnet (`RAG_SYNC_URLS`) quando a base interna local necessitar de atualização complementar.
@@ -71,6 +74,7 @@ flowchart TD
 
 ### 🎧 Agente 3 — Agente de Suporte ao Cliente (`support_node`)
 - **Papel:** Atendimento autenticado e personalizado utilizando o identificador do cliente (`user_id`).
+- **Autenticação Obrigatória:** Exige validação de documento (CPF/ID) antes de expor extratos ou dados privados.
 - **Ferramentas (`SUPPORT_TOOLS`):**
   1. `consultar_vendas_e_liquidacao`: Consulta vendas de ontem, liquidação em conta corrente cadastrada e prazos contratuais D+2.
   2. `consultar_status_maquininhas`: Diagnóstico de conectividade, intensidade de sinal (4G/Wi-Fi) e estado dos terminais (Get Clássica, Get Smart, Get Mini, POS Digital).
@@ -102,7 +106,7 @@ O sistema conta com uma infraestrutura de RAG de alta disponibilidade e custo co
 
 1. **Ingestão de Arquivos Locais (`fonte_de_dados/`):**
    - Suporte a múltiplos formatos: `.pdf`, `.docx`, `.txt`, `.md`, `.csv`, `.json`, `.log`.
-   - **Deduplicação com Hash MD5:** Tabela SQLite `simple_sync_hashes` armazena a assinatura criptográfica de cada arquivo. Arquivos sem alteração são ignorados instantaneamente na inicialização, economizando chamadas de embedding. Se alterados, os chunks obsoletos são expurgados do ChromaDB e substituídos pelos novos.
+   - **Deduplicação com Hash MD5:** Tabela SQLite `simple_sync_hashes` armazena a assinatura criptográfica de cada arquivo. Arquivos inalterados são ignorados instantaneamente na inicialização, economizando chamadas de embedding. Se alterados, os chunks obsoletos são expurgados do ChromaDB e substituídos pelos novos.
 
 2. **Crawler Recursivo de URLs Parametrizadas:**
    - Varredura assíncrona das URLs raiz configuradas no `.env` (`RAG_ASYNC_URLS`) com profundidade configurável (`RAG_CRAWLER_MAX_DEPTH`) e limite de páginas (`RAG_CRAWLER_MAX_PAGES`).
@@ -118,6 +122,27 @@ O sistema conta com uma infraestrutura de RAG de alta disponibilidade e custo co
 
 ---
 
+## 📊 Observabilidade e Telemetria em Tempo Real
+
+O sistema incorpora um módulo de telemetria em tempo real ([telemetry.py](file:///c:/Estudo%20IA/desafio-get/backend/infrastructure/telemetry.py)) integrado ao pipeline do [ConversationService](file:///c:/Estudo%20IA/desafio-get/backend/services/conversation_service.py):
+- **Coleta de Métricas Operacionais:** Registra latência de resposta em milissegundos, taxa de bloqueio por guardrails, distribuição de uso por agente especialista e classificação por categorias.
+- **Endpoint de Estatísticas:** `GET /api/v1/admin/dashboard-stats` fornece métricas consolidadas (tempo médio de resposta, volume de chamadas, acurácia e KPIs de autoatendimento vs transbordo) para exibição direta no Dashboard do Frontend.
+
+---
+
+## 🧹 Arquitetura Limpa e Boas Práticas (Clean Code & SDD)
+
+O projeto foi refatorado seguindo rigorosamente os princípios de **Clean Code**, **Separation of Concerns** e **Single Responsibility**:
+- **Composition Root em `backend/main.py`:** Centraliza a inicialização da aplicação, middlewares (CORS), manipuladores globais de exceção e registro dos roteadores.
+- **Modularidade de Rotas com `APIRouter`:**
+  - `backend/api/conversations.py`: Rota do canal conversacional com o cliente (`/chat`).
+  - `backend/api/admin.py`: Rotas de administração de base de dados, upload de arquivos, crawler e dashboard.
+- **Princípio DRY (*Don't Repeat Yourself*):**
+  - O serviço `ConversationService` encapsula a lógica de execução do grafo, formatação de sessão e telemetria, sendo reutilizado tanto pela API FastAPI quanto pelo terminal interativo `backend/cli.py`.
+- **Eliminação de Código Morto (YAGNI):** Remoção de interfaces não utilizadas e scripts obsoletos, mantendo a árvore de arquivos limpa, coesa e com dependências claras.
+
+---
+
 ## 💻 Interface Visual Moderna (Frontend SaaS)
 
 O frontend foi desenvolvido com foco em alta produtividade, estética limpa e **zero dependências externas pesadas**:
@@ -126,15 +151,14 @@ O frontend foi desenvolvido com foco em alta produtividade, estética limpa e **
   - Gerenciamento completo de sessões no estado da aplicação (`React State`), cada qual com seu `thread_id` isolado para manter memórias e contextos independentes.
   - Títulos de sessão auto-gerados com base na primeira mensagem do usuário.
   - Exclusão individual de conversas (ícone de lixeira `🗑️`) e botão global *"Limpar Todas as Conversas"* com alerta de confirmação.
-  - Alternador retrátil no cabeçalho para recolher ou expandir a barra lateral.
 - **Micro-Parser de Markdown Nativo:**
   - Renderiza **negrito**, *itálico*, `código inline`, citações (`> blockquote`), listas com marcadores, cabeçalhos hierárquicos e o bloco destacado de *"📌 Fontes consultadas"* sem vulnerabilidades XSS.
 - **Empty State & Cards de Sugestões de Acesso Rápido:**
   - 4 cards inteligentes para início instantâneo de conversa (*Taxas e Maquininhas*, *Vendas e Extrato*, *Suporte Técnico POS*, *Atendente Humano*).
 - **Badges Semânticos dos Agentes:**
   - Identificação visual imediata de qual agente especialista respondeu cada turno (`Conhecimento`, `Suporte Técnico`, `Escalonamento Humano`, `Segurança & Políticas`), além de pílulas indicando as ferramentas corporativas acionadas.
-- **Cursor e Foco Contínuo:**
-  - O campo de digitação permanece com o cursor ativo continuamente após o envio de mensagens, troca de sessões ou conclusão do processamento.
+- **Dashboard Integrado:**
+  - Aba de visualização de métricas e status em tempo real com dados da telemetria da API.
 
 ---
 
@@ -142,7 +166,7 @@ O frontend foi desenvolvido com foco em alta produtividade, estética limpa e **
 
 ### Opção A: Execução via Docker Compose (Recomendada)
 
-Com apenas um comando, o Docker Compose inicializa tanto a **API Backend** quanto a **Interface Web Frontend**:
+Com apenas um comando, o Docker Compose compila e inicializa tanto a **API Backend** quanto a **Interface Web Frontend**:
 
 1. Certifique-se de que o Docker e Docker Compose estão instalados.
 2. Configure o arquivo `.env` com sua chave da OpenAI:
@@ -194,22 +218,31 @@ Com apenas um comando, o Docker Compose inicializa tanto a **API Backend** quant
 
 ---
 
+### Opção C: Terminal Interativo CLI
+
+Para testar diretamente os agentes via linha de comando sem necessidade de subir a interface gráfica:
+```bash
+python backend/cli.py
+```
+
+---
+
 ## 🧪 Bateria de Testes Automatizados (> 160 Testes)
 
 O sistema possui uma suíte de testes de nível industrial com `pytest`, cobrindo desde a especificação oficial até testes de estresse, segurança e diálogos multi-turnos:
 
 ```bash
-# Executa todos os testes
-pytest -v
-
-# Executa os 10 cenários oficiais da especificação Getnet
-pytest tests/test_scenarios.py -v
+# Executa os 10 cenários oficiais da especificação Getnet + Testes de Roteamento Rápido
+pytest -v tests/test_scenarios.py tests/test_fast_path.py
 
 # Executa os 50 testes de robustez multi-turnos (3 a 5 turnos com MemorySaver)
 pytest tests/test_robustness_multiturn_50.py -v
 
 # Executa os 50 testes de robustez turno único
 pytest tests/test_robustness_50.py -v
+
+# Executa a bateria completa
+pytest -v
 ```
 
 ### Cobertura das Suítes de Teste:
@@ -217,6 +250,7 @@ pytest tests/test_robustness_50.py -v
 | Arquivo de Teste | Quantidade | Foco da Validação |
 |---|:---:|---|
 | **`tests/test_scenarios.py`** | 10 casos | **10 Cenários Oficiais do Desafio** (100% de aprovação comprovada) |
+| **`tests/test_fast_path.py`** | 70 casos | Testes de saudações, agradecimentos, confirmações e FAQ imediato |
 | **`tests/test_robustness_50.py`** | 50 casos | Robustez turno único: Guardrails, Knowledge, Support e Escalation |
 | **`tests/test_robustness_v2_50.py`** | 50 casos | Casos adversariais v2 e validação de limites de ferramentas |
 | **`tests/test_robustness_multiturn_50.py`** | 50 casos | **Multi-turnos (3 a 5 turnos)**: retenção de memória com `MemorySaver`, 12 casos de escalonamento humano com operadores de `OPERADORES_POR_FILA`, transição de contexto entre especialistas e persistência |
@@ -253,9 +287,10 @@ Endpoint principal de conversação compatível com turnos individuais ou conver
 }
 ```
 
-### Endpoints Administrativos:
+### Endpoints Administrativos e de Operação:
 - `POST /api/v1/admin/upload-files-rag`: Upload multipart de novos arquivos para a pasta `fonte_de_dados/`.
 - `POST /api/v1/admin/sync-web?target=all&force=false`: Disparo de sincronização e vetorização da base RAG.
+- `GET /api/v1/admin/dashboard-stats`: Métricas de latência, taxa de acerto e telemetria operacional.
 - `GET /health`: Verificação de status e versão da aplicação.
 
 ---
@@ -269,7 +304,7 @@ Para a gravação do seu vídeo aos avaliadores técnicos, utilize este roteiro 
    - Destaque o diferencial de contar com 4 agentes cooperativos (Roteador, Conhecimento, Suporte ao Cliente e Escalonamento Humano) + Camada de Guardrails.
 2. **Arquitetura e Fluxo do Grafo (1.5 min):**
    - Exiba o diagrama Mermaid no `README.md` ou LangGraph Studio.
-   - Explique o papel do nó `guardrail` (segurança preventiva), `orchestrator` (roteador semântico determinístico), `knowledge` (RAG local + crawler web Getnet + DuckDuckGo), `support` (autenticação por `user_id` e ferramentas corporativas) e `escalation` (Human Handoff assistido).
+   - Explique o papel do nó `guardrail` (segurança preventiva), `orchestrator` (roteador semântico determinístico com relógio dinâmico), `knowledge` (RAG local + crawler web Getnet + DuckDuckGo), `support` (autenticação por `user_id` e ferramentas corporativas) e `escalation` (Human Handoff assistido com protocolo `GET-2026-XXXX`).
 3. **Pipeline de RAG Híbrido e Sincronização Inteligente (1.5 min):**
    - Mostre a pasta `fonte_de_dados/` e as tabelas SQLite de deduplicação por hash MD5 (`simple_sync_hashes` e `url_sync_hashes`).
    - Explique como arquivos e URLs inalterados são pulados, e como o crawler substitui chunks antigos no ChromaDB quando há alteração.
@@ -280,6 +315,7 @@ Para a gravação do seu vídeo aos avaliadores técnicos, utilize este roteiro 
    - Teste 1: Clique na sugestão *"Taxas e Maquininhas"* e observe a resposta com Markdown e badge *"Conhecimento"*.
    - Teste 2: Pergunte sobre o extrato do `cliente1988` e veja a ativação do badge *"Suporte Técnico"* e ferramentas corporativas.
    - Teste 3: Peça transferência para falar com um humano, veja o direcionamento inteligente e a ativação do badge *"Escalonamento Humano"* com operador real atribuído e protocolo oficial.
+   - Mostre a aba de **Dashboard** com os indicadores em tempo real.
 5. **Encerramento e Qualidade de Código (1 min):**
    - Exiba o terminal executando `pytest tests/test_scenarios.py -v` (10 passed) e mencione os mais de 160 casos de teste automatizados.
-   - Mostre o `docker-compose.yml` e o container pronto para implantação com `docker compose up --build`.
+   - Mostre o `docker-compose.yml` e a inicialização sincronizada com `docker compose up --build`.
