@@ -89,8 +89,9 @@ async def global_exception_handler(request: Request, exc: Exception):
 async def root():
     return {
         "message": "Getnet Multi-Agent API está online!",
-        "docs": "http://localhost:8001/docs",
-        "health": "http://localhost:8001/health",
+        "chat": "/chat/",
+        "docs": "/docs",
+        "health": "/health",
         "frontend": "http://localhost:3001"
     }
 
@@ -102,6 +103,17 @@ async def health_check():
 app.include_router(conversations.router, prefix="/api/v1", tags=["Conversations"])
 app.include_router(admin.router, prefix="/api/v1/admin", tags=["Admin"])
 
+# Suporte ao Frontend no Backend (permite rodar em porta única e túneis Cloudflare)
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
+
+frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
+if frontend_dir.exists():
+    logging.info(f"Interface Web montada com sucesso em /chat a partir de: {frontend_dir}")
+    app.mount("/chat", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
+else:
+    logging.warning(f"Diretório frontend não encontrado em: {frontend_dir}")
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("backend.main:app", host="127.0.0.1", port=8001, reload=True)
+    uvicorn.run("backend.main:app", host="127.0.0.1", port=settings.PORT, reload=True)

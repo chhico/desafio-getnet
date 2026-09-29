@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     LANGCHAIN_ENDPOINT: Optional[str] = Field("https://api.smith.langchain.com", env="LANGCHAIN_ENDPOINT")
     LANGSMITH_ENDPOINT: Optional[str] = Field(None, env="LANGSMITH_ENDPOINT")
     
+    # Server Port
+    PORT: int = Field(8001, env="PORT")
+
     # CORS
     BACKEND_CORS_ORIGINS: list[str] = ["*"]
 
