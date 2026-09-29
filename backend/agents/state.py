@@ -65,3 +65,7 @@ class SupportState(TypedDict):
 
     # Observabilidade / Rastreabilidade de Ferramentas
     tools_used: list[str] | None
+
+    # Tier 1 Fast-Path
+    fast_path_response: str | None
+
