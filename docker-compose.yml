@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
     container_name: getnet-multiagent-api
     ports:
-      - "8001:8001"
+      - "${PORT:-8001}:8001"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - AGENT_MODEL=${AGENT_MODEL:-gpt-4o-mini}
@@ -33,6 +33,7 @@ services:
     volumes:
       - ./bds:/app/bds
       - ./fonte_de_dados:/app/fonte_de_dados
+      - ./frontend:/app/frontend
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]

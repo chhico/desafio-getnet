@@ -11,4 +11,3 @@ __pycache__
 *.log
 test_results.txt
 final_test_report.txt
-frontend/
