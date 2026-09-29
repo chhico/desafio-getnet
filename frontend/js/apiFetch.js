@@ -1,4 +1,6 @@
-const API_BASE = "http://localhost:8001/api/v1";
+// Base da API relativa (agnóstica de porta, host ou protocolo)
+// Permite override opcional via window.__API_BASE__ se necessário
+const API_BASE = window.__API_BASE__ || "/api/v1";
 
 /**
  * Wrapper centralizado para fetch API.

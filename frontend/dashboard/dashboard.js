@@ -1,5 +1,7 @@
-// Getnet Multi-Agent System - Dashboard Telemetry Controller
-const API_BASE_URL = "http://localhost:8001/api/v1/admin/dashboard-stats";
+// Base da API relativa (agnóstica de porta, host ou protocolo)
+const API_BASE_URL = window.__API_BASE__
+    ? `${window.__API_BASE__}/admin/dashboard-stats`
+    : "/api/v1/admin/dashboard-stats";
 
 let currentMode = localStorage.getItem("getnet_dashboard_mode") || "production";
 let agentDonutChart = null;
