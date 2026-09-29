@@ -12,7 +12,7 @@ from langchain_core.messages import SystemMessage, AIMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 
 from backend.agents.state import SupportState, get_last_human_message
-from backend.agents.agent_utils import run_agent_with_tools
+from backend.agents.agent_utils import run_agent_with_tools, get_system_clock_context
 from backend.agents.tools.support_tools import (
     SUPPORT_TOOLS,
     _CLIENT_DATABASE,
@@ -29,12 +29,22 @@ SYSTEM_PROMPT = """Você é o Agente de Suporte ao Cliente (Customer Support Age
 Seu foco é resolver problemas e dúvidas personalizadas de clientes credenciados.
 Você está atendendo o cliente autenticado: {user_id} - {nome_cliente}.
 
+{contexto_temporal}
+
 Ferramentas disponíveis:
 1. `consultar_vendas_e_liquidacao`: use para consultar o extrato financeiro, histórico de vendas por data ou geral, saldo a receber e dados bancários cadastrados do cliente.
 2. `consultar_status_maquininhas`: use para verificar modelos vinculados, número de série, status de conexão (online/offline) e sinal de rede.
 3. `consultar_transacoes_e_erros`: use SEMPRE que o cliente perguntar por transações, seja por ID específico (ex: TXN-00000, TXN-99821), por status (aprovadas, recusadas) ou por data.
 4. `consultar_chamados_suporte`: use SEMPRE que o cliente perguntar pelo status de chamados técnicos abertos anteriormente, protocolos de suporte, agendamento de visita técnica ou reagendamento de visita de manutenção.
 5. `abrir_chamado_suporte`: use SEMPRE que o cliente solicitar expressamente abertura de chamado, pedido de reposição de bobinas de papel térmico para a maquininha, solicitação de troca de equipamento com defeito ou envio de suprimentos.
+
+DIRETRIZES DE RESOLUÇÃO TEMPORAL E FIDELIDADE ESTREITA À BASE DE DADOS (GROUNDING):
+- O contexto temporal do sistema acima informa a data, horário e ano correntes no servidor Getnet.
+- Para qualquer pergunta sobre períodos relativos (como 'ontem', 'hoje', 'semana passada' ou 'últimas vendas') ou datas específicas:
+  1. Identifique a data solicitada com base no contexto temporal do sistema e chame as ferramentas de suporte (`consultar_vendas_e_liquidacao` ou `consultar_transacoes_e_erros`) para consultar o histórico real do cliente `{user_id}` no banco de dados.
+  2. Baseie sua resposta EXCLUSIVAMENTE nas datas, valores e contas bancárias retornadas pelo banco de dados.
+  3. Se o cliente perguntar por uma data específica ou período relativo (ex: 'ontem') e o banco de dados informar que não constam lançamentos para aquela data exata, esclareça com transparência que não há vendas registradas para essa data e apresente os dados do fechamento mais recente que de fato consta no cadastro (com sua data real, valores e previsão de depósito bancário).
+  4. NUNCA deduza, presuma ou invente datas, valores, transações ou anos que não constem no banco de dados e no retorno das ferramentas.
 
 DIRETRIZES DE ATENDIMENTO E ISOLAMENTO DE DADOS:
 - SEMPRE passe o identificador do cliente autenticado `{user_id}` nas ferramentas para consultar sua base de dados exclusiva em `_CLIENT_DATABASE`.
@@ -85,6 +95,7 @@ def support_node(state: SupportState, config: RunnableConfig) -> dict:
         custom_system_prompt = SYSTEM_PROMPT.format(
             user_id=authenticated_user_id,
             nome_cliente=client_data["nome"],
+            contexto_temporal=get_system_clock_context(),
         )
         current_messages = [SystemMessage(content=custom_system_prompt)] + messages
         updated_messages = run_agent_with_tools(
@@ -129,6 +140,7 @@ def support_node(state: SupportState, config: RunnableConfig) -> dict:
         custom_system_prompt = SYSTEM_PROMPT.format(
             user_id=authenticated_user_id,
             nome_cliente=client_data["nome"],
+            contexto_temporal=get_system_clock_context(),
         )
 
         prompt_confirmacao = (

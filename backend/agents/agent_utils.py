@@ -176,3 +176,34 @@ def run_agent_with_tools(
         response.name = agent_name
 
     return sanitize_messages_for_llm(updated_messages)
+
+
+def get_system_clock_context() -> str:
+    """
+    Retorna o contexto temporal dinâmico do sistema formatado em português.
+    Informa ao modelo a data atual, dia da semana, horário e ano do servidor.
+    Permite resolução dinâmica de datas sem 'hardcoding' de strings estáticas.
+    """
+    from datetime import datetime
+
+    now = datetime.now()
+    dias_semana = [
+        "Segunda-feira",
+        "Terça-feira",
+        "Quarta-feira",
+        "Quinta-feira",
+        "Sexta-feira",
+        "Sábado",
+        "Domingo",
+    ]
+    meses = [
+        "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+        "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"
+    ]
+    dia_semana_str = dias_semana[now.weekday()]
+    mes_str = meses[now.month - 1]
+
+    return (
+        f"Data e Hora Atual do Sistema: {dia_semana_str}, {now.day} de {mes_str} de {now.year}, {now.strftime('%H:%M')}.\n"
+        f"Ano de referência corrente: {now.year}."
+    )

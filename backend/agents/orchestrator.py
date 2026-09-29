@@ -12,8 +12,11 @@ import logging
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from backend.agents.state import SupportState, get_last_human_message
 from backend.agents.escalation_agent import is_human_insistence
+from backend.agents.fast_path import check_fast_path
+from backend.agents.agent_utils import get_system_clock_context
 from backend.core.config import settings
 from backend.core.llm_factory import get_agent_llm
+
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +27,9 @@ ORCHESTRATOR_PROMPT = """Você é o Agente Roteador (Router Agent) do ecossistem
 Sua responsabilidade é analisar a mensagem recebida e decidir qual agente especialista deve atendê-la.
 
 Especialistas disponíveis:
-1. `knowledge` (Agente de Conhecimento — PRIORIDADE PARA MANUAIS E PROCEDIMENTOS):
+1. `knowledge` (Agente de Conhecimento — PRIORIDADE PARA MANUAIS, PROCEDIMENTOS E SAUDAÇÕES):
+   - Saudações e cumprimentos cordiais (ex: 'oi', 'olá', 'bom dia', 'boa tarde', 'boa noite', 'opa', 'olá assistente'): direcione SEMPRE para `knowledge` (Categoria: 'Saudação') para que o assistente virtual receba o cliente, apresente-se e pergunte como pode ajudar.
+   - NUNCA direcione saudações ('oi', 'olá') para `escalation`! Saudações NÃO são pedidos de atendente humano!
    - Perguntas conceituais, comparativos de produtos e serviços da Getnet (ex: Get Clássica vs Get Smart, Get Mini, taxas padrão, antecipação de recebíveis, crediário, Link de Pagamento, Pix, manuais gerais).
    - Regras comerciais e contratuais gerais: políticas de isenção de aluguel por faturamento, regras de meta de vendas, compra vs aluguel de terminal e tarifas de inatividade (ex: 'Se em um mês meu faturamento cair abaixo da meta, o que acontece?', 'Qual o faturamento mínimo para aluguel zero?', 'Existe taxa de inatividade?').
    - Dúvidas sobre recursos, funcionalidades e telas do aplicativo Getnet ou portal web (ex: 'O que consigo fazer no app?', 'O aplicativo permite visualizar lançamentos futuros ou depósitos?', 'Como acompanho vendas pelo app?', relatórios disponíveis no app).
@@ -53,6 +58,7 @@ Especialistas disponíveis:
 
 4. `escalation` (Agente de Escalonamento para Humanos / Human Handoff):
    - Solicitações explícitas de atendimento humano (ex: 'quero falar com atendente', 'me passe para uma pessoa', 'falar com humano').
+   - ATENÇÃO CRÍTICA: Cumprimentos ou saudações comuns (como 'oi', 'olá', 'bom dia', 'boa tarde') NÃO SÃO pedidos de atendente humano! NUNCA direcione saudações simples para `escalation`.
    - Casos em que o sistema identifica necessidade crítica de intervenção humana (Escalonamento Implícito):
      a) Dano físico ou acidente no terminal que exige substituição de equipamento ou visita técnica (ex: caiu na água, tela trincada, fumaça, queimou).
      b) Bloqueios judiciais de valores, contestações jurídicas ou chargebacks de alto valor.
@@ -76,6 +82,10 @@ DIRETRIZ DE CONTEXTO:
   - Se o usuário solicitar falar com atendente humano, escolha 'escalation'.
   - Se o usuário mudou de assunto e fez uma nova pergunta conceitual/geral (ex: 'Qual é a diferença entre a Get Clássica e a Get Smart?', 'Como funciona o Pix?', 'Como trocar o Wi-Fi?'), escolha 'knowledge'.
 
+DIRETRIZ DE ANCORAGEM TEMPORAL:
+- Data de Referência do Sistema: 23 de setembro de 2026.
+- Acompanhamentos de fechamento de vendas recentes ('ontem', 'vendas recentes', 'quais valores?') de clientes autenticados pertencem a 'support'.
+
 Responda APENAS com um JSON rigorosamente válido:
 {
   "next_agent": "<knowledge|support|guardrail_block|escalation>",
@@ -94,6 +104,18 @@ def orchestrator_node(state: SupportState) -> dict:
     pending_escalation = state.get("pending_escalation", False)
     authenticated_id = state.get("authenticated_user_id")
     awaiting_subject = state.get("awaiting_escalation_subject", False)
+
+    # 0. Tier 1 Fast-Path: Respostas determinísticas imediatas (Saudações, Agradecimentos, Confirmações, FAQ Rápido)
+    if not awaiting_subject and not pending_escalation:
+        fast_result = check_fast_path(last_message or "")
+        if fast_result:
+            logger.info(f"⚡ Fast-Path Tier 1 ativado: {fast_result['category']} -> {fast_result['agent']}")
+            return {
+                "next_agent": fast_result["agent"],
+                "category": fast_result["category"],
+                "routing_reason": f"Tier 1 Fast-Path: {fast_result['category']}",
+                "fast_path_response": fast_result["response"],
+            }
 
     # 1. Se estiver em processo de escalonamento humano aguardando documento do cliente
     if pending_escalation:
@@ -132,6 +154,15 @@ def orchestrator_node(state: SupportState) -> dict:
             # Usuário informou o assunto/problema. Limpa a espera de assunto para que o roteador avalie o tema livremente
             awaiting_subject = False
 
+    # 3. Se o suporte solicitou identificação anteriormente (CPF/ID), direciona deterministicamente para support
+    if awaiting_id and not awaiting_subject and not pending_escalation:
+        logger.info("Roteamento determinístico: awaiting_identification ativo -> support")
+        return {
+            "next_agent": "support",
+            "category": "Autenticação",
+            "routing_reason": "Fornecimento de dados de identificação solicitados pelo suporte",
+        }
+
     # Monta breve histórico das últimas interações para evitar desvios semânticos fora de contexto
     recent_history = []
     for m in messages[-4:-1]:
@@ -139,7 +170,7 @@ def orchestrator_node(state: SupportState) -> dict:
         text_snip = (m.content or "")[:120].replace("\n", " ")
         recent_history.append(f"{role}: {text_snip}")
 
-    context_info = f"Cliente ID: {user_id}\n"
+    context_info = f"{get_system_clock_context()}\nCliente ID: {user_id}\n"
     if authenticated_id:
         context_info += f"STATUS: Cliente já autenticado na sessão ({authenticated_id}). Dúvidas de acompanhamento de atendimento técnico/suporte podem permanecer em 'support'.\n"
     if recent_history:

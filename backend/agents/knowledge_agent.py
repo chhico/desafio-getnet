@@ -6,17 +6,19 @@ Processa consultas que exigem recuperação de informações da Getnet via RAG
 e utiliza busca web externa para perguntas de uso geral.
 """
 
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import SystemMessage, AIMessage
 from langchain_core.runnables import RunnableConfig
 
-from backend.agents.state import SupportState
-from backend.agents.agent_utils import run_agent_with_tools
+from backend.agents.state import SupportState, get_last_human_message
+from backend.agents.agent_utils import run_agent_with_tools, get_system_clock_context
 from backend.agents.tools.knowledge_tools import KNOWLEDGE_TOOLS
+from backend.agents.fast_path import check_fast_path
 from backend.core.config import settings
 from backend.core.llm_factory import get_agent_llm
 
 llm = get_agent_llm(temperature=0, model=settings.get_knowledge_model())
 llm_with_tools = llm.bind_tools(KNOWLEDGE_TOOLS)
+
 
 SYSTEM_PROMPT = """Você é o Agente de Conhecimento (Knowledge Agent) oficial da Getnet.
 
@@ -35,6 +37,10 @@ DIRETRIZES DE ENCADEAMENTO INTELIGENTE (CACHE-FIRST COM FALLBACK ONLINE):
 - Para perguntas externas (tempo, moedas, notícias gerais): chame diretamente `pesquisar_web`.
 - Seja direto, cortês e coeso. Nunca invente dados técnicos ou taxas.
 
+DIRETRIZ DE CONTEXTO TEMPORAL E FIDELIDADE ÀS FONTES:
+- {contexto_temporal}
+- Ao pesquisar ou responder sobre previsão do tempo, feriados ou cotações de moedas ('hoje', 'amanhã'), utilize a data e ano atuais do sistema como referência para sua busca web. Nunca mencione anos passados desatualizados.
+
 OBRIGATÓRIO — IDENTIFICAÇÃO E CITAÇÃO DAS FONTES:
 - Sempre que você utilizar informações recuperadas pelas ferramentas (`consultar_base_local_getnet`, `consultar_base_web_getnet` ou `pesquisar_web`), você DEVE OBRIGATORIAMENTE indicar ao final da resposta a(s) fonte(s) onde a resposta foi encontrada.
 - Especifique claramente se a fonte é um Arquivo físico local ou uma URL web.
@@ -51,7 +57,27 @@ OBRIGATÓRIO — IDENTIFICAÇÃO E CITAÇÃO DAS FONTES:
 
 def knowledge_node(state: SupportState, config: RunnableConfig) -> dict:
     """Nó do Agente de Conhecimento."""
-    messages = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
+    # 0. Interceptação Tier 1 Fast-Path (Resposta Imediata sem chamada a LLM)
+    fast_path_resp = state.get("fast_path_response")
+    if fast_path_resp:
+        return {
+            "messages": [AIMessage(content=fast_path_resp, name="knowledge")],
+            "next_agent": "knowledge",
+            "category": state.get("category", "Saudação / Apresentação"),
+            "fast_path_response": None,
+        }
+
+    last_user_msg = get_last_human_message(state.get("messages", []))
+    direct_fast = check_fast_path(last_user_msg)
+    if direct_fast and not state.get("originated_from_human_intent") and not state.get("awaiting_escalation_subject"):
+        return {
+            "messages": [AIMessage(content=direct_fast["response"], name="knowledge")],
+            "next_agent": "knowledge",
+            "category": direct_fast["category"],
+        }
+
+    dynamic_prompt = SYSTEM_PROMPT.format(contexto_temporal=get_system_clock_context())
+    messages = [SystemMessage(content=dynamic_prompt)] + state["messages"]
     updated_messages = run_agent_with_tools(
         llm_with_tools=llm_with_tools,
         tools=KNOWLEDGE_TOOLS,

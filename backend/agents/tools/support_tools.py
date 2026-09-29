@@ -617,27 +617,37 @@ def consultar_vendas_e_liquidacao(user_id: str, data: Optional[str] = None) -> s
         return f"Nenhum histórico financeiro encontrado para o cliente '{user_id}'."
 
     # Filtra por data específica, se informada
+    mais_recente = max(historico, key=lambda x: x["data"]) if historico else None
+    data_recente = mais_recente["data"] if mais_recente else None
+
+    aviso_data = ""
     if data:
         registros = [r for r in historico if r["data"] == data]
         if not registros:
-            datas_disponiveis = ", ".join(r["data"] for r in historico)
-            return (
-                f"Nenhum registro encontrado para a data {data} do cliente '{cliente['nome']}'.\n"
-                f"Datas disponíveis no histórico: {datas_disponiveis}."
+            # Caso a data informada não conste, retorna o histórico completo e avisa o modelo com transparência
+            aviso_data = (
+                f"ℹ️ Informação do Banco de Dados: Não constam lançamentos de vendas para a data {data}. "
+                f"O fechamento de vendas mais recente registrado no cadastro do cliente é de {data_recente}.\n"
             )
+            registros = historico
     else:
         registros = historico  # Retorna todo o histórico
 
     linhas = [f"📊 Histórico Financeiro — {cliente['nome']} (ID: {user_id})"]
-    linhas.append(f"Conta de Liquidação: {conta['banco']}, Ag: {conta['agencia']}, CC: {conta['conta']}\n")
+    linhas.append(f"Conta de Liquidação: {conta['banco']}, Ag: {conta['agencia']}, CC: {conta['conta']}")
+    if data_recente:
+        linhas.append(f"Fechamento de vendas mais recente no cadastro: {data_recente}\n")
+    if aviso_data:
+        linhas.append(aviso_data)
 
     for r in sorted(registros, key=lambda x: x["data"], reverse=True):
+        tag_recente = " [Fechamento Mais Recente Registrado]" if r["data"] == data_recente else ""
         detalhes_str = " | ".join(
             f"{d['tipo']}: R$ {d['valor']:.2f} (MDR {d['taxa_mdr']})" for d in r["detalhes"]
         ) if r["detalhes"] else "Sem movimentações"
 
         linhas.append(
-            f"📅 Data: {r['data']}\n"
+            f"📅 Data: {r['data']}{tag_recente}\n"
             f"   Bruto: R$ {r['total_bruto']:.2f} | Líquido: R$ {r['total_liquido']:.2f} | Qtd: {r['quantidade_vendas']} venda(s)\n"
             f"   Modalidades: {detalhes_str}\n"
             f"   Prazo: {r['prazo_liquidacao']}\n"
