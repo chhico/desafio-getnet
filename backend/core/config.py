@@ -1,22 +1,28 @@
 import os
 from typing import Optional
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
     # Meta
     PROJECT_NAME: str = "desafio-get"
     VERSION: str = "2.0.0"
     
     # LLM & Agente
-    OPENAI_API_KEY: str = Field(..., env="OPENAI_API_KEY")
-    AGENT_MODEL: str = Field("gpt-4o-mini", env="AGENT_MODEL")
-    ROUTER_MODEL: Optional[str] = Field(None, env="ROUTER_MODEL")
-    SUPPORT_MODEL: Optional[str] = Field(None, env="SUPPORT_MODEL")
-    KNOWLEDGE_MODEL: Optional[str] = Field(None, env="KNOWLEDGE_MODEL")
-    ESCALATION_MODEL: Optional[str] = Field(None, env="ESCALATION_MODEL")
-    AGENT_TEMPERATURE: float = Field(0.0, env="AGENT_TEMPERATURE")
-    AGENT_MAX_ITERATIONS: int = Field(10, env="AGENT_MAX_ITERATIONS")
+    OPENAI_API_KEY: str = Field(default="")
+    AGENT_MODEL: str = "gpt-4o-mini"
+    ROUTER_MODEL: Optional[str] = None
+    SUPPORT_MODEL: Optional[str] = None
+    KNOWLEDGE_MODEL: Optional[str] = None
+    ESCALATION_MODEL: Optional[str] = None
+    AGENT_TEMPERATURE: float = 0.0
+    AGENT_MAX_ITERATIONS: int = 10
 
     def get_router_model(self) -> str:
         return self.ROUTER_MODEL or self.AGENT_MODEL
@@ -30,44 +36,39 @@ class Settings(BaseSettings):
     def get_escalation_model(self) -> str:
         return self.ESCALATION_MODEL or self.AGENT_MODEL
     
-    # Seguran\u00e7a (Removida conforme solicita\u00e7\u00e3o)
-    # API_SECRET_KEY: str = Field(..., env="API_SECRET_KEY")
-    # API_ADMIN_KEY: str = Field(..., env="API_ADMIN_KEY")
+    # Segurança (Removida conforme solicitação)
+    # API_SECRET_KEY: str = Field(...)
+    # API_ADMIN_KEY: str = Field(...)
 
     # DB e Vector
-    MEMORY_BACKEND: str = Field("sqlite", env="MEMORY_BACKEND")
-    VECTOR_DB: str = Field("chroma", env="VECTOR_DB")
-    CHROMA_PERSIST_DIR: str = Field("bds/chroma_db", env="CHROMA_PERSIST_DIR")
-    CHECKPOINT_DB_PATH: str = Field("bds/checkpoints.sqlite", env="CHECKPOINT_DB_PATH")
-    CONFIG_DB_PATH: str = Field("bds/config.db", env="CONFIG_DB_PATH")
-    RAG_SYNC_DB_PATH: str = Field("bds/rag_sync.sqlite", env="RAG_SYNC_DB_PATH")
-    RAG_SYNC_MODE: str = Field("simple", env="RAG_SYNC_MODE")
-    RAG_ASYNC_URLS: str = Field("https://www.getnet.eu/pt/suporte, https://site.getnet.com.br/get-ajuda/", env="RAG_ASYNC_URLS")
-    RAG_SYNC_URLS: str = Field("https://site.getnet.com.br/blog/", env="RAG_SYNC_URLS")
-    RAG_CRAWLER_MAX_DEPTH: int = Field(2, env="RAG_CRAWLER_MAX_DEPTH")
-    RAG_CRAWLER_MAX_PAGES: int = Field(100, env="RAG_CRAWLER_MAX_PAGES")
-    RAG_WEB_SYNC_CRON: str = Field("0 3 * * *", env="RAG_WEB_SYNC_CRON")
+    MEMORY_BACKEND: str = "sqlite"
+    VECTOR_DB: str = "chroma"
+    CHROMA_PERSIST_DIR: str = "bds/chroma_db"
+    CHECKPOINT_DB_PATH: str = "bds/checkpoints.sqlite"
+    CONFIG_DB_PATH: str = "bds/config.db"
+    RAG_SYNC_DB_PATH: str = "bds/rag_sync.sqlite"
+    RAG_SYNC_MODE: str = "simple"
+    RAG_ASYNC_URLS: str = "https://www.getnet.eu/pt/suporte, https://site.getnet.com.br/get-ajuda/"
+    RAG_SYNC_URLS: str = "https://site.getnet.com.br/blog/"
+    RAG_CRAWLER_MAX_DEPTH: int = 2
+    RAG_CRAWLER_MAX_PAGES: int = 100
+    RAG_WEB_SYNC_CRON: str = "0 3 * * *"
 
     # LangChain / LangSmith Tracing
-    LANGCHAIN_TRACING_V2: str = Field("false", env="LANGCHAIN_TRACING_V2")
-    LANGSMITH_TRACING: Optional[str] = Field(None, env="LANGSMITH_TRACING")
-    LANGCHAIN_API_KEY: str = Field("", env="LANGCHAIN_API_KEY")
-    LANGSMITH_API_KEY: Optional[str] = Field(None, env="LANGSMITH_API_KEY")
-    LANGCHAIN_PROJECT: str = Field("desafio-get", env="LANGCHAIN_PROJECT")
-    LANGSMITH_PROJECT: Optional[str] = Field(None, env="LANGSMITH_PROJECT")
-    LANGCHAIN_ENDPOINT: Optional[str] = Field("https://api.smith.langchain.com", env="LANGCHAIN_ENDPOINT")
-    LANGSMITH_ENDPOINT: Optional[str] = Field(None, env="LANGSMITH_ENDPOINT")
+    LANGCHAIN_TRACING_V2: str = "false"
+    LANGSMITH_TRACING: Optional[str] = None
+    LANGCHAIN_API_KEY: str = ""
+    LANGSMITH_API_KEY: Optional[str] = None
+    LANGCHAIN_PROJECT: str = "desafio-get"
+    LANGSMITH_PROJECT: Optional[str] = None
+    LANGCHAIN_ENDPOINT: Optional[str] = "https://api.smith.langchain.com"
+    LANGSMITH_ENDPOINT: Optional[str] = None
     
     # Server Port
-    PORT: int = Field(8001, env="PORT")
+    PORT: int = 8001
 
     # CORS
     BACKEND_CORS_ORIGINS: list[str] = ["*"]
-
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        extra = "ignore"  # Ignora campos extras no .env
 
     def validate_keys(self) -> None:
         if not self.OPENAI_API_KEY:
