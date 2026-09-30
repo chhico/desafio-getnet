@@ -357,6 +357,225 @@ const OFFICIAL_TEST_SCENARIOS = [
     }
 ];
 
+/**
+ * Componente de Observabilidade & Inspeção do Harness (4 Pilares).
+ * Renderiza um accordion moderno e expansível abaixo da resposta da IA.
+ */
+const HarnessTraceInspector = ({ trace }) => {
+    if (!trace) return null;
+
+    const [expanded, setExpanded] = useState(false);
+
+    const nodes = trace.nodes_visited || [];
+    const tools = trace.tool_calls || [];
+
+    const getNodeBadge = (node) => {
+        const n = String(node).toLowerCase();
+        if (n.includes("guardrail")) return { icon: "🛡️", label: "guardrail", color: "#10b981" };
+        if (n.includes("orchestrator") || n.includes("router")) return { icon: "🧭", label: "orchestrator", color: "#6366f1" };
+        if (n.includes("knowledge")) return { icon: "📚", label: "knowledge", color: "#0ea5e9" };
+        if (n.includes("support")) return { icon: "🛠️", label: "support", color: "#f59e0b" };
+        if (n.includes("escalation")) return { icon: "👤", label: "escalation", color: "#ec4899" };
+        if (n.includes("fast_path")) return { icon: "⚡", label: "fast_path", color: "#8b5cf6" };
+        return { icon: "⚙️", label: node.replace("_node", ""), color: "#94a3b8" };
+    };
+
+    return (
+        <div className="harness-trace-container">
+            {/* Barra Pill de Resumo do Harness */}
+            <div
+                className={`harness-summary-pill ${expanded ? 'active' : ''}`}
+                onClick={() => setExpanded(prev => !prev)}
+                title="Clique para inspecionar os 4 pilares do Harness de Execução"
+            >
+                <div className="pill-left">
+                    <span className="pill-metric">⚡ {trace.latency_ms}ms</span>
+                    <span className="pill-sep">•</span>
+                    <span className="pill-metric">🪙 {trace.estimated_tokens} tokens</span>
+                    <span className="pill-sep">•</span>
+                    <span className="pill-trajectory">
+                        🧭 {nodes.map((n, i) => (
+                            <span key={i} className="pill-node">
+                                {n.replace('_node', '')}{i < nodes.length - 1 ? ' ➔ ' : ''}
+                            </span>
+                        ))}
+                    </span>
+                </div>
+                <div className="pill-right">
+                    <span className="pill-chevron">{expanded ? '▲' : '▼'}</span>
+                </div>
+            </div>
+
+            {/* Painel Expansível de Detalhes dos 4 Pilares */}
+            {expanded && (
+                <div className="harness-details-panel">
+                    <div className="harness-panel-header">
+                        <div className="panel-title">
+                            <span className="panel-icon">🔬</span>
+                            <strong>Agent Harness & Trajectory Inspector</strong>
+                        </div>
+                        <div className="panel-meta">
+                            <span>Thread: <code>{trace.thread_id ? (trace.thread_id.length > 20 ? trace.thread_id.substring(0, 18) + '...' : trace.thread_id) : 'local'}</code></span>
+                            <span>•</span>
+                            <span>Turno #{trace.turn_count}</span>
+                        </div>
+                    </div>
+
+                    <div className="harness-grid">
+                        {/* 1. Trajetória no Grafo */}
+                        <div className="harness-card card-trajectory">
+                            <div className="card-header">
+                                <span className="card-tag">Pilar 1</span>
+                                <h4>🧭 Trajetória no Grafo (Trajectory Evaluation)</h4>
+                            </div>
+                            <div className="flow-step-chain">
+                                {nodes.map((n, i) => {
+                                    const meta = getNodeBadge(n);
+                                    return (
+                                        <div key={i} className="chain-node-box">
+                                            <div className="node-chip" style={{ borderColor: meta.color }}>
+                                                <span>{meta.icon}</span>
+                                                <strong>{meta.label}</strong>
+                                            </div>
+                                            {i < nodes.length - 1 && <span className="chain-arrow">➔</span>}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+
+                            <div className="tools-executed-box">
+                                <div className="sub-label">Ferramentas Acionadas (Tool Calls):</div>
+                                {tools.length === 0 ? (
+                                    <div className="tool-empty-msg">Nenhuma ferramenta externa acionada (Resposta direta do especialista).</div>
+                                ) : (
+                                    tools.map((tc, idx) => (
+                                        <div key={idx} className="tool-call-row">
+                                            <div className="tool-name-badge">
+                                                <span>🔧</span> <code>{tc.tool}</code>
+                                            </div>
+                                            <div className="tool-args-preview">
+                                                <code>{typeof tc.args === 'object' ? JSON.stringify(tc.args) : String(tc.args)}</code>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+
+                        {/* 2. Isolamento & Efeitos Colaterais */}
+                        <div className="harness-card card-isolation">
+                            <div className="card-header">
+                                <span className="card-tag">Pilar 2</span>
+                                <h4>🛡️ Isolamento & Mocks (Side-Effects & Safety)</h4>
+                            </div>
+                            <ul className="harness-checklist">
+                                <li>
+                                    <span className="check-icon">📦</span>
+                                    <div>
+                                        <strong>Ambiente:</strong>
+                                        <span className="badge-env">{trace.execution_mode}</span>
+                                    </div>
+                                </li>
+                                <li>
+                                    <span className="check-icon">{trace.mutation_performed ? "📝" : "🔒"}</span>
+                                    <div>
+                                        <strong>Efeitos em Produção:</strong>
+                                        {trace.mutation_performed ? (
+                                            <span className="text-warning" title={trace.mutation_details || "Chamado salvo na base de homologação"}>
+                                                ⚠️ Mutação Contida em Sandbox (Registro inserido no banco local sem impactar CRM de Produção)
+                                            </span>
+                                        ) : (
+                                            <span className="text-safe">
+                                                🔒 Zero Efeito Colateral (Operação Idempotente de Leitura)
+                                            </span>
+                                        )}
+                                    </div>
+                                </li>
+                                <li>
+                                    <span className="check-icon">👤</span>
+                                    <div>
+                                        <strong>Autenticação (KYC):</strong>
+                                        {trace.authenticated ? (
+                                            <span className="text-safe">✅ Autenticado ({trace.user_id})</span>
+                                        ) : (
+                                            <span className="text-warning">⚠️ Sessão Anônima (Privacidade LGPD)</span>
+                                        )}
+                                    </div>
+                                </li>
+                                <li>
+                                    <span className="check-icon">🛡️</span>
+                                    <div>
+                                        <strong>Guardrail na Entrada:</strong>
+                                        {trace.guardrail_safe ? (
+                                            <span className="text-safe">✅ Seguro (Zero Injeção / Prompt OK)</span>
+                                        ) : (
+                                            <span className="text-danger">🚨 Interceptação Ativada</span>
+                                        )}
+                                    </div>
+                                </li>
+                            </ul>
+                        </div>
+
+                        {/* 3. Scoring & FinOps */}
+                        <div className="harness-card card-metrics">
+                            <div className="card-header">
+                                <span className="card-tag">Pilar 3</span>
+                                <h4>📊 Métricas & FinOps (Scoring)</h4>
+                            </div>
+                            <div className="metrics-triad">
+                                <div className="metric-box">
+                                    <span className="metric-num">{trace.latency_ms} <small>ms</small></span>
+                                    <span className="metric-desc">Latência de Turno</span>
+                                    <span className="metric-benchmark">P95 &lt; 1500ms</span>
+                                </div>
+                                <div className="metric-box">
+                                    <span className="metric-num">~{trace.estimated_tokens}</span>
+                                    <span className="metric-desc">Tokens Estimados</span>
+                                    <span className="metric-benchmark">Prompt + Output</span>
+                                </div>
+                                <div className="metric-box">
+                                    <span className="metric-num">${trace.estimated_cost_usd}</span>
+                                    <span className="metric-desc">Custo do Turno</span>
+                                    <span className="metric-benchmark">FinOps Otimizado</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 4. Estado Persistido na Memória (State Snapshot Real) */}
+                        <div className="harness-card card-multiturn">
+                            <div className="card-header">
+                                <span className="card-tag">Pilar 4</span>
+                                <h4>🔄 Estado Persistido na Memória (State Snapshot)</h4>
+                            </div>
+                            <div className="multiturn-info">
+                                <div className="info-row">
+                                    <span>Mensagens no Buffer de Contexto:</span>
+                                    <strong>{trace.buffer_messages_count || 2} msgs acumuladas</strong>
+                                </div>
+                                <div className="state-snapshot-container">
+                                    <div className="sub-label">Variáveis Ativas no StateGraph:</div>
+                                    {trace.state_snapshot && Object.keys(trace.state_snapshot).length > 0 ? (
+                                        <div className="state-vars-grid">
+                                            {Object.entries(trace.state_snapshot).map(([key, val]) => (
+                                                <div key={key} className="state-var-pill">
+                                                    <span className="var-key">{key}:</span>
+                                                    <code className="var-val">{String(val)}</code>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="tool-empty-msg">Nenhuma variável de negócio pendente no estado.</div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 const Dashboard = () => {
     // Gerador de ID único de sessão
     const createNewSession = (title = "Nova Conversa") => ({
@@ -498,6 +717,7 @@ const Dashboard = () => {
                 content: res.response,
                 agent: res.agent_used,
                 tools: res.tools_used || [],
+                trace: res.trace || null,
                 timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                 tempId: Date.now() + 1
             };
@@ -792,22 +1012,15 @@ const Dashboard = () => {
                                                 </span>
                                             )}
 
-                                            {!isUser && msg.tools && msg.tools.length > 0 && (
-                                                <div className="tools-container">
-                                                    {msg.tools.map((tName, tIdx) => (
-                                                        <span key={tIdx} className="tool-pill" title={`Ferramenta corporativa: ${tName}`}>
-                                                            🔧 {tName}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            )}
-
                                             <span className="message-timestamp">{msg.timestamp}</span>
                                         </div>
 
                                         {/* Conteúdo Renderizado com Markdown Nativo */}
                                         <div className="message-body">
                                             <MarkdownRenderer content={msg.content} />
+                                            {!isUser && msg.trace && (
+                                                <HarnessTraceInspector trace={msg.trace} />
+                                            )}
                                         </div>
                                     </div>
                                 </div>
