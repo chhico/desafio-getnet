@@ -23,12 +23,20 @@ Todas as implementações, refatorações e sugestões de arquitetura devem obed
 
 ---
 
-## 3. Qualidade de Código e Evals-First (TDD)
+## 3. Qualidade de Código, Evals-First e Arquitetura de Testes (TDD)
 - Qualquer alteração em lógica de agentes, ferramentas ou rotas da API **deve manter a suíte de testes 100% verde**.
-- Comandos de validação padrão no terminal:
-  - `pytest tests/test_scenarios.py -v` (Cenários oficiais do edital)
-  - `pytest tests/test_robustness_multiturn_50.py -v` (Robustez e multi-turnos)
+- A suíte de testes é organizada em uma **Arquitetura Sequencial de 4 Camadas**:
+  1. `tests/test_01_edital_scenarios.py`: 27 cenários oficiais e de bônus do edital (10 obrigatórios + 17 bônus).
+  2. `tests/test_02_agents.py`: Testes unitários e comportamentais para os 5 especialistas (Guardrail, Orchestrator, Knowledge, Support, Escalation).
+  3. `tests/test_03_tools_and_internal.py`: Ferramentas internas, Fast-Path regex, crawler web, admin upload e sincronização RAG SQLite.
+  4. `tests/test_04_multiturn_harness.py`: 50 cenários de robustez conversacional profunda (3 a 6 turnos) com gravação progressiva e geração automática de Dossiê Executivo (Markdown e JSON).
+- **Comandos de validação padrão no terminal:**
+  - `pytest tests/test_01_edital_scenarios.py -v` (ou `pytest tests/test_scenarios.py -v`)
+  - `pytest tests/test_02_agents.py -v` (Especialistas do Grafo)
+  - `pytest tests/test_03_tools_and_internal.py -v` (Ferramentas e Métodos Internos)
+  - `python tests/test_04_multiturn_harness.py` (ou `pytest tests/test_04_multiturn_harness.py -v`)
   - `pytest -v` (Bateria completa)
+- **Relatórios Executivos:** Centralizados em `tests/reporters/dossier_generator.py` e gerados em `tests/reports/relatorio_*_latest.md` e `.json`.
 - Nunca comente ou remova asserções de testes para "forçar" um teste a passar. Adapte a implementação para cumprir a asserção.
 
 ---
