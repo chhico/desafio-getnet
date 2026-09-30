@@ -247,16 +247,20 @@ pytest -v
 
 ### Cobertura das Suítes de Teste:
 
-| Arquivo de Teste | Quantidade | Foco da Validação |
+| Camada / Arquivo de Teste | Qtd. Casos | Foco da Validação e Cobertura |
 |---|:---:|---|
-| **`tests/test_scenarios.py`** | 10 casos | **10 Cenários Oficiais do Desafio** (100% de aprovação comprovada) |
-| **`tests/test_fast_path.py`** | 70 casos | Testes de saudações, agradecimentos, confirmações e FAQ imediato |
-| **`tests/test_robustness_50.py`** | 50 casos | Robustez turno único: Guardrails, Knowledge, Support e Escalation |
-| **`tests/test_robustness_v2_50.py`** | 50 casos | Casos adversariais v2 e validação de limites de ferramentas |
-| **`tests/test_robustness_multiturn_50.py`** | 50 casos | **Multi-turnos (3 a 5 turnos)**: retenção de memória com `MemorySaver`, 12 casos de escalonamento humano com operadores de `OPERADORES_POR_FILA`, transição de contexto entre especialistas e persistência |
-| **`tests/test_crawler.py`** | Unitário | Extração e sanitização de páginas web |
-| **`tests/test_rag_enrichment.py`** | Unitário | Deduplicação por hash MD5 e sincronização ChromaDB |
-| **`tests/test_admin_upload.py`** | Unitário | Validação de formatos e limites de upload multipart |
+| **`tests/test_01_edital_scenarios.py`** | 27 casos | **Cenários Oficiais e Bônus do Edital** (10 obrigatórios + 17 regras de negócio, KYC e guardrails) |
+| **`tests/test_02_agents.py`** | 17 casos | **Especialistas do Grafo**: Guardrail (anti-abuso), Orchestrator (roteamento), Knowledge (RAG/Web), Support (KYC/chamados) e Escalation (triagem 3 níveis) |
+| **`tests/test_03_tools_and_internal.py`** | 61 casos | **Ferramentas Internas**: Fast-Path regex (<15ms), crawler web/Base64, endpoint admin upload multipart e RAG SQLite |
+| **`tests/test_04_multiturn_harness.py`** | 50 casos | **Robustez Multiturno Profunda (3 a 6 turnos)**: 210 turnos de diálogo, retenção de memória com `MemorySaver`, isolamento e Dossiê Executivo automatizado |
+| *Wrappers Retrocompatíveis:* | - | `test_scenarios.py` e `test_robustness_multiturn_50.py` mantêm 100% de compatibilidade com comandos legados |
+
+### 📑 Geração de Relatórios e Dossiês Executivos:
+- **Centralizador de Relatórios:** `tests/reporters/dossier_generator.py` consolida os resultados em formato corporativo para apresentação técnica e auditoria.
+- **Artefatos Gerados:**
+  - `tests/reports/relatorio_multiturn_harness_latest.md` (Sumário executivo, SLA P95, aprovação e trajetória dos agentes)
+  - `tests/reports/relatorio_multiturn_harness_latest.json` (Métricas estruturadas em JSON)
+  - `tests/reports/relatorio_testes_multiturn_latest.md` (Dossiê granular turno a turno com todas as perguntas, respostas e ferramentas)
 
 ---
 
