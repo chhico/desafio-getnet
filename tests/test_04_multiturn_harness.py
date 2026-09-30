@@ -1162,7 +1162,8 @@ def _format_case_dossier_markdown(r: TestResult) -> str:
     tools_str = ", ".join(r.all_executed_tools) if r.all_executed_tools else "Nenhuma"
 
     lines = [
-        f"### 💬 Caso #{r.case_id:03d} [{r.category.upper()}] — {r.name} ({r.total_turns} Turnos) ({status_badge})\n",
+        f'<a id="caso-{r.case_id:03d}"></a>',
+        f"### 💬 Caso #{r.case_id:03d} [{r.category.upper()}] — {r.name} ({r.total_turns} Turnos) ({status_badge}) &nbsp; [🔝 Voltar à Matriz Geral](#matriz-geral)\n",
         f"- **Status Geral:** **{status_badge}**{fail_info}",
         f"- **Agente(s) da Sessão:** `{agents_flow}`",
         f"- **Tools Executadas:** `{tools_str}`",
@@ -1357,6 +1358,7 @@ def finalize_reports(
         )
     lines.append("\n")
 
+    lines.append('<a id="matriz-geral"></a>')
     lines.append("## 4. Tabela Geral de Casos Executados\n")
     lines.append("| ID | Categoria | Cenário | Turnos | Agente(s) Usado(s) | Status | Latência |")
     lines.append("| :-: | :--- | :--- | :-: | :--- | :-: | -: |")
@@ -1366,7 +1368,7 @@ def finalize_reports(
             status_badge = f"✅ PASS ({r.note})"
         agents_str = " ➔ ".join(r.all_agents_used) if r.all_agents_used else "Nenhum"
         lines.append(
-            f"| `#{r.case_id:03d}` | {r.category} | {r.name} | `{r.total_turns}T` | "
+            f"| `#{r.case_id:03d}` | {r.category} | [{r.name}](#caso-{r.case_id:03d}) | `{r.total_turns}T` | "
             f"`{agents_str}` | {status_badge} | {r.duration_ms:.0f}ms |"
         )
     lines.append("\n")
@@ -1409,6 +1411,17 @@ def finalize_reports(
                 "all_executed_tools": r.all_executed_tools,
                 "duration_ms": r.duration_ms,
                 "error_reasons": r.error_reasons,
+                "turns": [
+                    {
+                        "turn_index": t.turn_index,
+                        "user_message": t.message,
+                        "response": t.response,
+                        "agent_used": t.actual_agent,
+                        "tools_used": t.actual_tools,
+                        "latency_ms": t.duration_ms,
+                    }
+                    for t in r.turns
+                ],
             }
             for r in results
         ]
