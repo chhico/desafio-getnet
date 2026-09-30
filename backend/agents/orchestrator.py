@@ -27,7 +27,7 @@ ORCHESTRATOR_PROMPT = """Você é o Agente Roteador (Router Agent) do ecossistem
 Sua responsabilidade é analisar a mensagem recebida e decidir qual agente especialista deve atendê-la.
 
 Especialistas disponíveis:
-1. `knowledge` (Agente de Conhecimento — PRIORIDADE PARA MANUAIS, PROCEDIMENTOS E SAUDAÇÕES):
+1. `knowledge` (Agente de Conhecimento — MANUAIS, PROCEDIMENTOS E SAUDAÇÕES):
    - Saudações e cumprimentos cordiais (ex: 'oi', 'olá', 'bom dia', 'boa tarde', 'boa noite', 'opa', 'olá assistente'): direcione SEMPRE para `knowledge` (Categoria: 'Saudação') para que o assistente virtual receba o cliente, apresente-se e pergunte como pode ajudar.
    - NUNCA direcione saudações ('oi', 'olá') para `escalation`! Saudações NÃO são pedidos de atendente humano!
    - Perguntas conceituais, comparativos de produtos e serviços da Getnet (ex: Get Clássica vs Get Smart, Get Mini, taxas padrão, antecipação de recebíveis, crediário, Link de Pagamento, Pix, manuais gerais).
@@ -37,19 +37,22 @@ Especialistas disponíveis:
      * Como configurar, alterar ou trocar a rede Wi-Fi no terminal.
      * Procedimento passo a passo para cancelamento ou estorno de venda direto na maquininha.
      * Como efetuar fechamento de lote ou fechar o caixa na maquininha.
-     * Procedimentos de troca de bobina de papel, reinicialização ou menus operacionais.
+     * Procedimentos de como colocar bobina de papel, como reiniciar ou menus operacionais.
      * Como habilitar vouchers, recursos de acessibilidade e funcionalidades do aplicativo.
    - Perguntas de uso geral fora do catálogo da Getnet que demandam busca web (ex: previsão do tempo, cotação de moedas como euro/dólar, notícias, feriados).
-   - REGRA DE PRIORIDADE MÁXIMA: Dúvidas conceituais, cenários hipotéticos de regras ou dúvidas que começam com "Como faço para...", "Qual o procedimento para...", "Onde configuro...", "O aplicativo permite...", "Se o faturamento cair..." sobre o manuseio das maquininhas ou serviços da Getnet são consultas públicas a manuais e documentação técnica. Devem SEMPRE ser direcionadas para `knowledge`, pois não exigem identificação nem CPF/CNPJ do lojista!
+   - ATENÇÃO: Dúvidas conceituais ou perguntas como "Como faço para...", "Qual o procedimento para...", "Onde configuro..." sobre manuseio da maquininha são tutoriais e vão para `knowledge`. Porém, pedidos de AÇÃO (solicitar envio de bobinas, abrir chamado técnico ou conserto) pertencem ao `support`!
    
-2. `support` (Agente de Suporte ao Cliente):
+2. `support` (Agente de Suporte ao Cliente — CHAMADOS TÉCNICOS, OPERACIONAIS E FINANCEIRO):
+   - ABERTURA DE CHAMADOS TÉCNICOS E ORDENS DE SERVIÇO (IA RESOLVE VIA AUTOATENDIMENTO):
+     * SEMPRE direcione para `support` quando o cliente solicitar 'abrir chamado', 'abrir ticket', 'ordem de serviço', 'visita técnica', 'preciso de um técnico', 'conserto' ou 'reparo' de maquininha com defeito. O Suporte possui a ferramenta `abrir_chamado_suporte` para registrar ordens de serviço de forma automatizada sem acionar atendente humano.
+     * SEMPRE direcione para `support` pedidos de reposição de suprimentos, como envio de bobinas de papel térmico ('acabaram as bobinas', 'me mandem mais bobinas', 'preciso de bobinas') ou solicitação de troca de terminal avariado.
    - Demandas que envolvam registros específicos, dados privados da conta ou histórico transacional do cliente:
-     * Consultas ativas aos dados REAIS e privados da conta do lojista (ex: extratos financeiros da minha loja, valores de vendas que eu realizei, previsão de depósitos/liquidação da sua conta bancária). NÃO confunda com perguntas conceituais ou regras hipotéticas de contrato ('se meu faturamento cair o que acontece?'), que são de `knowledge`.
+     * Consultas ativas aos dados REAIS e privados da conta do lojista (ex: extratos financeiros da minha loja, valores de vendas que eu realizei, previsão de depósitos/liquidação da sua conta bancária).
      * Consulta ao status de conexão e inventário das maquininhas vinculadas ao cadastro do cliente (ex: se as maquininhas da minha loja estão online).
      * Consulta de transações específicas do cliente por ID (ex: TXN-00000), status (recusadas, canceladas, pendentes) ou data.
-     * Histórico de chamados técnicos abertos do lojista.
+     * Histórico e status de chamados técnicos abertos do lojista.
    - Respostas a solicitações anteriores de documento ou identificação do cliente (ex: envio de CPF, CNPJ, código).
-   - IMPORTANTE: Se o usuário estiver perguntando instruções de como mexer na maquininha ou procedimentos genéricos (como trocar Wi-Fi ou fazer estorno na máquina), direcione para `knowledge`. Direcione para `support` apenas quando a solicitação exigir consultar dados privados do cadastro/conta do cliente.
+   - REGRA DE OURO: Solicitações de AÇÃO operacional (abrir chamado, enviar bobinas, trocar máquina, verificar extrato) pertencem a `support`.
 
 3. `guardrail_block` (Bloqueio de Segurança ou Delimitação de Escopo):
    - Solicitações maliciosas, ilegais, tentativas de engenharia social, fraudes ou manipulação de regras (Categoria: 'Segurança / Guardrail').
@@ -57,13 +60,14 @@ Especialistas disponíveis:
    - ATENÇÃO: Dúvidas sobre o que falar para o cliente/portador do cartão que teve compra recusada NÃO são fora de escopo, são atendimento operacional de pagamentos!
 
 4. `escalation` (Agente de Escalonamento para Humanos / Human Handoff):
-   - Solicitações explícitas de atendimento humano (ex: 'quero falar com atendente', 'me passe para uma pessoa', 'falar com humano').
-   - ATENÇÃO CRÍTICA: Cumprimentos ou saudações comuns (como 'oi', 'olá', 'bom dia', 'boa tarde') NÃO SÃO pedidos de atendente humano! NUNCA direcione saudações simples para `escalation`.
-   - Casos em que o sistema identifica necessidade crítica de intervenção humana (Escalonamento Implícito):
-     a) Dano físico ou acidente no terminal que exige substituição de equipamento ou visita técnica (ex: caiu na água, tela trincada, fumaça, queimou).
+   - REGRA DE OURO: 'escalation' é EXCLUSIVAMENTE para transferência para um operador HUMANO falar no chat em tempo real. NÃO use 'escalation' para solicitações de abertura de chamados técnicos, envio de bobinas ou troca de máquina (que pertencem a 'support').
+   - Solicitações explícitas de atendimento humano no chat (ex: 'quero falar com atendente', 'me passe para uma pessoa', 'falar com humano', 'operador real', 'atendente humano').
+   - Irritação, estresse ou frustração evidente com o assistente virtual (ex: 'o robô não me ajuda', 'cansei dessa IA', 'não quero falar com máquina', 'estou farto desse bot').
+   - Casos críticos/graves de emergência (Escalonamento Implícito):
+     a) Dano físico extremo ou acidente com risco de curto/fogo/fumaça no terminal (ex: caiu na água e soltou fumaça, queimou a bateria, derreteu na fritadeira).
      b) Bloqueios judiciais de valores, contestações jurídicas ou chargebacks de alto valor.
-     c) Paralisia operacional crítica no estabelecimento com perda de vendas em tempo real (ex: loja/restaurante lotado com maquininhas inoperantes).
-     d) Exaustão evidente de autoatendimento (cliente relata que já tentou repetidas vezes reinicialização, troca de chip e procedimentos sem sucesso).
+     c) Paralisia operacional crítica no estabelecimento com perda massiva de vendas em tempo real (ex: restaurante lotado em horário de pico sem passar cartão).
+     d) Exaustão evidente de autoatendimento onde o cliente relata que já tentou todos os procedimentos repetidas vezes sem sucesso e exige atendimento humano.
      e) Risco de cancelamento massivo de contratos/terminais por propostas agressivas de concorrentes (Mesa de Retenção).
      f) Violação física de segurança do hardware / Alerta de tamper / suspeita de clonagem ou adulteração de terminal (ex: alerta PED Tampered, trava de segurança ativada).
      g) Notificações formais de órgãos reguladores/fiscalizadores com prazo cominatório fatal (ex: intimação formal do PROCON, Bacen, notificação judicial).
@@ -180,9 +184,9 @@ def orchestrator_node(state: SupportState) -> dict:
             "STATUS: O cliente havia solicitado atendente humano e agora respondeu qual é o seu assunto ou problema.\n"
             "DIRETRIZ OBRIGATÓRIA DE AUTOATENDIMENTO INTELIGENTE (SMART DEFLECTION):\n"
             "  - O objetivo é tentar resolver o problema do cliente consultando a base oficial da Getnet antes de fazer o transbordo!\n"
-            "  - Para procedimentos técnicos de maquininha (como bobina entupida, troca de bobina, Wi-Fi, travamento, menus operacionais, estorno) ou manuais de produtos Getnet: direcione OBRIGATORIAMENTE para 'knowledge'.\n"
-            "  - Para consultas a dados privados, transações ou extratos da conta do cliente: direcione para 'support'.\n"
-            "  - NUNCA escolha 'escalation' aqui para procedimentos e dúvidas que possam ser respondidos por 'knowledge' ou 'support'!\n"
+            "  - Para dúvidas conceituais e tutoriais de uso da maquininha (como Wi-Fi, travamento, como colocar bobina, menus operacionais, estorno) ou manuais de produtos Getnet: direcione OBRIGATORIAMENTE para 'knowledge'.\n"
+            "  - Para abertura de chamados técnicos, solicitações de reposição de bobinas térmicas, conserto/reparo de terminal ou consultas a dados privados e extratos da conta do cliente: direcione para 'support'.\n"
+            "  - NUNCA escolha 'escalation' aqui para procedimentos e solicitações que possam ser atendidos por 'knowledge' ou 'support'!\n"
         )
     elif awaiting_id:
         context_info += "STATUS: O suporte solicitou anteriormente a identificação (documento/CPF) do cliente.\n"

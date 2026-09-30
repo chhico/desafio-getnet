@@ -36,7 +36,7 @@ Ferramentas disponíveis:
 2. `consultar_status_maquininhas`: use para verificar modelos vinculados, número de série, status de conexão (online/offline) e sinal de rede.
 3. `consultar_transacoes_e_erros`: use SEMPRE que o cliente perguntar por transações, seja por ID específico (ex: TXN-00000, TXN-99821), por status (aprovadas, recusadas) ou por data.
 4. `consultar_chamados_suporte`: use SEMPRE que o cliente perguntar pelo status de chamados técnicos abertos anteriormente, protocolos de suporte, agendamento de visita técnica ou reagendamento de visita de manutenção.
-5. `abrir_chamado_suporte`: use SEMPRE que o cliente solicitar expressamente abertura de chamado, pedido de reposição de bobinas de papel térmico para a maquininha, solicitação de troca de equipamento com defeito ou envio de suprimentos.
+5. `abrir_chamado_suporte`: use SEMPRE que o cliente solicitar abertura de chamado, pedido de técnico, conserto/reparo de máquina, reposição de bobinas de papel térmico para a maquininha, solicitação de troca de equipamento com defeito ou envio de suprimentos.
 
 DIRETRIZES DE RESOLUÇÃO TEMPORAL E FIDELIDADE ESTREITA À BASE DE DADOS (GROUNDING):
 - O contexto temporal do sistema acima informa a data, horário e ano correntes no servidor Getnet.
@@ -51,8 +51,16 @@ DIRETRIZES DE ATENDIMENTO E ISOLAMENTO DE DADOS:
 - Você só pode consultar e fornecer informações pertencentes a {nome_cliente} (ID: {user_id}). Quando o cliente pedir suas informações, envie apenas o que é seu.
 - NUNCA presuma antecipadamente se uma transação, maquininha ou movimentação existe ou não. SEMPRE chame a respectiva ferramenta usando `{user_id}` para verificar se a informação está contida nos registros do cliente.
 - Caso a ferramenta retorne que a informação específica (ex: ID de transação, data ou terminal) não foi encontrada, informe de forma clara e amigável ao cliente que aquele registro específico não foi localizado para o seu cadastro.
-- Se o usuário tentar consultar ou solicitar dados explicitamente de OUTRO cliente, CPF ou CNPJ diferente de {user_id}, RECUSE CATEGORICAMENTE por questões de sigilo bancário e segurança da informação, orientando a iniciar uma 'Nova Conversa'.
-- Seja empático, claro e forneça os detalhes exatos (valores, datas, contas ou orientações técnicas de recusa).
+DIRETRIZ DE ESPECIFICIDADE E QUALIFICAÇÃO DO PROBLEMA TÉCNICO:
+- Ao atender uma demanda técnica de maquininha ou chamado, avalie a completude da solicitação:
+  1. RELATO ESPECÍFICO (Ação ou Sintoma claros):
+     * O cliente já informou expressamente o que ocorreu ou o que precisa (ex: 'acabaram as bobinas', 'quero abrir chamado para consertar', 'a tela quebrou', 'o leitor não passa cartão', 'erro de recusa 51').
+     * Execute imediatamente a ferramenta correspondente (`abrir_chamado_suporte`, `consultar_transacoes_e_erros` ou `consultar_status_maquininhas`) preenchendo o `motivo` com fidelidade estrita ao defeito ou solicitação informada pelo cliente.
+  2. RELATO VAGO / GENÉRICO (Menção a problema sem descrever o sintoma nem a ação desejada):
+     * O cliente apenas disse que algo está com defeito sem especificar o sintoma (ex: 'estou com problema na máquina', 'minha maquininha não funciona', 'problema na bobina' sem dizer se acabou ou travou).
+     * NÃO abra um chamado presuntivo nem tente adivinhar a peça/serviço. Acolha com empatia e faça UMA pergunta objetiva de qualificação para descobrir o defeito exato antes de abrir o chamado:
+       (Exemplo: "Compreendo a situação! Para que eu possa te orientar no procedimento exato ou registrar o chamado correto: o que está acontecendo especificamente? Por exemplo: o papel acabou ou emperrou? O visor exibe algum código de erro? O aparelho não liga?")
+     * Assim que o cliente responder com o sintoma real no turno seguinte, chame `abrir_chamado_suporte` registrando o motivo verdadeiro informado por ele.
 """
 
 
@@ -143,11 +151,29 @@ def support_node(state: SupportState, config: RunnableConfig) -> dict:
             contexto_temporal=get_system_clock_context(),
         )
 
-        prompt_confirmacao = (
-            f"O cliente acabou de se identificar com sucesso com o documento/identificador ({client_data.get('cpf', 'N/A')}). "
-            f"Nome do cliente cadastrado: {client_data['nome']}. "
-            f"Confirme brevemente a identificação e responda com precisão à seguinte solicitação: '{pergunta_a_responder}'."
-        )
+        # Determina a solicitação real do cliente (seja de turno anterior ou enviada junto com o documento)
+        pergunta_a_responder = pending_query
+        if not pergunta_a_responder:
+            import re
+            texto_limpo = re.sub(r'[\d\.\-\/\s]|cliente\w*|cpf|cnpj|meu|o|id|é|e|:|código|codigo', '', last_user_message.lower()).strip()
+            if len(texto_limpo) > 5:
+                pergunta_a_responder = last_user_message
+
+        if pergunta_a_responder:
+            prompt_confirmacao = (
+                f"O cliente se identificou com sucesso com o documento ({client_data.get('cpf', 'N/A')}) - {client_data['nome']}.\n"
+                f"Solicitação do cliente: '{pergunta_a_responder}'.\n"
+                f"DIRETRIZ DE ATENDIMENTO:\n"
+                f"1. Se a solicitação do cliente for ESPECÍFICA (ex: expressou que quer abrir chamado, pediu envio de bobinas, consultou erro/extrato ou relatou um sintoma claro como tela quebrada ou leitor inoperante): "
+                f"chame IMEDIATAMENTE a ferramenta apropriada (`abrir_chamado_suporte`, `consultar_transacoes_e_erros`, `consultar_vendas_e_liquidacao` ou `consultar_status_maquininhas`) e entregue o resultado completo.\n"
+                f"2. Se o relato for VAGO / GENÉRICO (ex: apenas disse 'estou com problema' sem especificar o que houve ou sem pedir ação direta): "
+                f"não abra chamados presuntivos; acolha a identificação e faça uma pergunta breve de qualificação para descobrir o defeito exato antes de registrar o chamado."
+            )
+        else:
+            prompt_confirmacao = (
+                f"O cliente acabou de se identificar com sucesso com o documento ({client_data.get('cpf', 'N/A')}) - {client_data['nome']}.\n"
+                f"Como o cliente apenas informou o documento sem ter feito uma solicitação prévia, confirme educadamente a identificação dele e pergunte como pode ajudá-lo hoje."
+            )
 
         current_messages = [
             SystemMessage(content=custom_system_prompt),
@@ -200,11 +226,18 @@ def support_node(state: SupportState, config: RunnableConfig) -> dict:
         }
 
     # Primeira vez ou nova pergunta sem fornecer documento:
+    last_text_lower = (last_user_message or "").lower()
+    if any(k in last_text_lower for k in ["abrir chamado", "abram um chamado", "abrir ticket", "ordem de serviço", "visita técnica", "enviem bobinas", "troca de máquina", "trocar"]):
+        contexto_acolhimento = "Posso registrar a abertura da sua solicitação agora mesmo!\n\n"
+    elif any(k in last_text_lower for k in ["venda", "ontem", "depósito", "deposito", "extrato", "saldo", "dinheiro", "liquidação", "liquidacao"]):
+        contexto_acolhimento = "Para consultar seus lançamentos financeiros e previsão de depósito com total segurança,\n\n"
+    else:
+        contexto_acolhimento = "Para acessar suas informações e atender sua solicitação com total segurança,\n\n"
+
     msg_solicitacao = AIMessage(
         content=(
-            "Olá! Para consultar as informações da sua conta, extratos financeiros ou suporte às suas maquininhas, "
-            "preciso confirmar sua identidade por motivos de segurança.\n\n"
-            "Por favor, informe seu **documento (CPF ou código de cliente)**:"
+            f"{contexto_acolhimento}"
+            "Por favor informe seu **documento (CPF, CNPJ ou código de cliente)**:"
         ),
         name="support",
     )
