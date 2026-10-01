@@ -43,18 +43,6 @@ class ConversationService:
         agent_used = result.get("next_agent", "unknown")
         category = result.get("category", "Geral")
 
-        # Registrar telemetria em tempo real
-        try:
-            telemetry_collector.record_turn(
-                agent_used=agent_used,
-                latency_ms=latency_ms,
-                is_safe=result.get("is_safe", True),
-                guardrail_reason=result.get("guardrail_reason"),
-                category=category
-            )
-        except Exception:
-            pass
-
         # Extrai ferramentas utilizadas exclusivamente no turno atual
         last_human_idx = -1
         for i, m in enumerate(all_msgs):
@@ -89,11 +77,30 @@ class ConversationService:
         else:
             nodes_visited = ["guardrail_node", "orchestrator_node", f"{agent_used}_node"]
 
-        # Estimativa de tokens e custos para o Harness Inspector
+        # Extração de tokens reais (OpenAI response_metadata) ou cálculo proporcional
+        real_tokens = None
+        for m in reversed(turn_msgs):
+            if hasattr(m, "response_metadata") and isinstance(m.response_metadata, dict):
+                tu = m.response_metadata.get("token_usage")
+                if tu:
+                    real_tokens = tu
+                    break
+            if hasattr(m, "usage_metadata") and isinstance(m.usage_metadata, dict):
+                real_tokens = m.usage_metadata
+                break
+
         prompt_len = len(message_content)
         resp_len = len(ai_msg)
-        estimated_tokens = int((prompt_len + resp_len) / 3.2) + 380
-        estimated_cost_usd = round(estimated_tokens * 0.0000015, 6)
+        if real_tokens:
+            prompt_tokens = real_tokens.get("prompt_tokens") or real_tokens.get("input_tokens") or 0
+            completion_tokens = real_tokens.get("completion_tokens") or real_tokens.get("output_tokens") or 0
+            estimated_tokens = prompt_tokens + completion_tokens
+            estimated_cost_usd = round((prompt_tokens * 0.00000015) + (completion_tokens * 0.00000060), 6)
+        else:
+            prompt_tokens = int(prompt_len / 3.2) + 280
+            completion_tokens = int(resp_len / 3.2)
+            estimated_tokens = prompt_tokens + completion_tokens
+            estimated_cost_usd = round((prompt_tokens * 0.00000015) + (completion_tokens * 0.00000060), 6)
 
         # Detecção inteligente de mutação de estado (escrita) vs leitura pura
         mutation_tools = {"abrir_chamado_suporte"}
@@ -118,6 +125,26 @@ class ConversationService:
                 match = re.search(r"\b(GET-\d{4,8}|GET-2026-\d{4})\b", ai_msg, re.IGNORECASE)
                 if match:
                     protocol = match.group(1).upper()
+
+        # Registrar telemetria persistente e durável no SQLite
+        try:
+            telemetry_collector.record_turn(
+                agent_used=agent_used,
+                latency_ms=latency_ms,
+                is_safe=result.get("is_safe", True),
+                guardrail_reason=result.get("guardrail_reason"),
+                category=category,
+                protocol=protocol,
+                thread_id=final_thread_id,
+                user_id=user_id,
+                message_text=message_content,
+                response_text=ai_msg,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                cost_usd=estimated_cost_usd,
+            )
+        except Exception:
+            pass
 
         # Snapshot 100% real das variáveis ativas no StateGraph (sem duplicar especialista do Pilar 1)
         state_snapshot = {}
