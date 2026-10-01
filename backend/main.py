@@ -85,11 +85,18 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"message": "Internal Server Error. Please contact support."},
     )
 
+from fastapi.responses import RedirectResponse
+
 @app.get("/", include_in_schema=False)
-async def root():
+async def root(request: Request):
+    accept = request.headers.get("accept", "")
+    if "text/html" in accept:
+        return RedirectResponse(url="/chat/", status_code=307)
     return {
         "message": "Getnet Multi-Agent API está online!",
         "chat": "/chat/",
+        "dashboard": "/dashboard/",
+        "observabilidade": "/dashboard/",
         "docs": "/docs",
         "health": "/health",
         "frontend": "http://localhost:3001"
@@ -109,8 +116,17 @@ from fastapi.staticfiles import StaticFiles
 
 frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
 if frontend_dir.exists():
+    dashboard_dir = frontend_dir / "dashboard"
+    if dashboard_dir.exists():
+        logging.info(f"Dashboard de Observabilidade montado com sucesso em /dashboard a partir de: {dashboard_dir}")
+        app.mount("/dashboard", StaticFiles(directory=str(dashboard_dir), html=True), name="dashboard")
+
     logging.info(f"Interface Web montada com sucesso em /chat a partir de: {frontend_dir}")
     app.mount("/chat", StaticFiles(directory=str(frontend_dir), html=True), name="frontend")
+
+    @app.get("/observabilidade", include_in_schema=False)
+    async def redirect_observabilidade():
+        return RedirectResponse(url="/dashboard/", status_code=307)
 else:
     logging.warning(f"Diretório frontend não encontrado em: {frontend_dir}")
 
