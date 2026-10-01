@@ -1,7 +1,15 @@
-// Base da API relativa (agnóstica de porta, host ou protocolo)
-const API_BASE_URL = window.__API_BASE__
-    ? `${window.__API_BASE__}/admin/dashboard-stats`
-    : "/api/v1/admin/dashboard-stats";
+// Base da API adaptável (agnóstica de porta, host ou protocolo)
+const getDashboardApiBase = () => {
+    if (window.__API_BASE__) {
+        return `${window.__API_BASE__}/admin/dashboard-stats`;
+    }
+    const port = window.location.port;
+    if (port === "3001" || port === "3000") {
+        return "http://localhost:8001/api/v1/admin/dashboard-stats";
+    }
+    return "/api/v1/admin/dashboard-stats";
+};
+const API_BASE_URL = getDashboardApiBase();
 
 let currentMode = localStorage.getItem("getnet_dashboard_mode") || "production";
 let agentDonutChart = null;
@@ -422,6 +430,38 @@ document.addEventListener("DOMContentLoaded", () => {
                     btnRefresh.innerHTML = "🔄 Atualizar Agora";
                 }, 400);
             });
+        });
+    }
+
+    // Configura o link de retorno ao chat de forma agnóstica de rota e porta
+    const btnBackChat = document.getElementById("btn-back-to-chat");
+    if (btnBackChat) {
+        const resolveChatUrl = () => {
+            const pathname = window.location.pathname || "";
+            const port = window.location.port;
+
+            // Se estiver acessando pelo backend (porta 8001 / uvicorn)
+            if (pathname.includes("/chat/dashboard")) {
+                return "/chat/";
+            }
+            if (pathname.includes("/dashboard") && (port === "8001" || port === "8000" || port === "")) {
+                return "/chat/";
+            }
+            // Se estiver na porta 3001 (container estático de frontend)
+            if (port === "3001" || port === "3000") {
+                return "/";
+            }
+            // Fallback genérico para caminhos montados
+            if (pathname.startsWith("/dashboard")) {
+                return "/chat/";
+            }
+            return "../";
+        };
+
+        btnBackChat.href = resolveChatUrl();
+        btnBackChat.addEventListener("click", (e) => {
+            e.preventDefault();
+            window.location.href = resolveChatUrl();
         });
     }
 });
