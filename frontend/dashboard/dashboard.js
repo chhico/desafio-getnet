@@ -290,9 +290,19 @@ function updateUI(data) {
         nodeLatencyChart.update();
     }
 
-    // Atualizar RPM Chart de acordo com o modo
+    // Atualizar SLA e Status no cabeçalho
+    if (data.system_health && data.system_health.sla) {
+        const slaEl = document.getElementById("header-sla");
+        if (slaEl) slaEl.textContent = `${data.system_health.sla} SLA`;
+    }
+
+    // Atualizar RPM Chart com dados reais agregados do SQLite
     if (rpmAreaChart) {
-        if (isProd && data.total_conversations_raw <= 5) {
+        if (data.rpm_chart && data.rpm_chart.labels && data.rpm_chart.rpm) {
+            rpmAreaChart.data.labels = data.rpm_chart.labels;
+            rpmAreaChart.data.datasets[0].data = data.rpm_chart.rpm;
+            rpmAreaChart.data.datasets[1].data = data.rpm_chart.latency;
+        } else if (isProd && data.total_conversations_raw <= 5) {
             rpmAreaChart.data.datasets[0].data = [0, 0, 0, 0, 0, 0, 0, 0, 1, 2, data.total_conversations_raw || 1, data.total_conversations_raw || 1, data.total_conversations_raw || 1];
             rpmAreaChart.data.datasets[1].data = [0, 0, 0, 0, 0, 0, 0, 0, 1.2, 1.5, 1.8, 1.8, 1.8];
         } else {
