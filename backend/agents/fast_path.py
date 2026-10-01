@@ -32,8 +32,9 @@ _CONFIRMATION_PATTERNS = [
 
 # Padrões de FAQ Rápido (Canais de Atendimento)
 _CHANNELS_PATTERNS = [
-    r"(qual\s+[ée]\s+o\s+)?(telefone|n[úu]mero|contato|whatsapp|sac|ouvidoria|0800)\s+(da\s+|do\s+|na\s+|de\s+)?getnet",
-    r"(como\s+ligar|como\s+falar\s+no\s+telefone)\s+(da\s+|na\s+|com\s+a\s+|para\s+a\s+|pra\s+)?getnet",
+    r"^(qual\s+[ée]\s+o\s+)?(telefone|n[úu]mero|contato|whatsapp|sac|ouvidoria|0800)\s+(da\s+|do\s+|na\s+|de\s+)?getnet\??$",
+    r"^(como\s+ligar|como\s+falar\s+no\s+telefone)\s+(da\s+|na\s+|com\s+a\s+|para\s+a\s+|pra\s+)?getnet\??$",
+    r"^(me\s+passa|me\s+d[áa]|informa|qual|passa)\s+(o\s+)?(telefone|n[úu]mero|contato|whatsapp|sac|ouvidoria|0800)(\s+da\s+getnet)?\??$",
 ]
 
 

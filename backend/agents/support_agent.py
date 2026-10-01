@@ -82,22 +82,30 @@ def support_node(state: SupportState, config: RunnableConfig) -> dict:
         # Verificação de segurança: o usuário está tentando consultar outro cliente na mesma sessão?
         outra_busca = buscar_cliente_por_documento(last_user_message)
         if outra_busca and outra_busca[0] != authenticated_user_id:
-            outro_id, outro_data = outra_busca
-            msg_bloqueio = AIMessage(
-                content=(
-                    f"🔒 **Acesso Não Permitido por Segurança:**\n\n"
-                    f"Esta sessão já está autenticada para o cliente **{client_data['nome']}**.\n"
-                    f"Por diretrizes de sigilo bancário e proteção de dados da Getnet, não é permitido consultar "
-                    f"informações de outro cliente ou documento nesta mesma conversa.\n\n"
-                    f"Caso deseje consultar outro cadastro, por favor inicie uma **Nova Conversa**."
-                ),
-                name="support",
-            )
-            return {
-                "messages": [msg_bloqueio],
-                "next_agent": "support",
-                "authenticated_user_id": authenticated_user_id,
-            }
+            msg_lower = (last_user_message or "").lower()
+            eh_contexto_venda_terceiro = any(k in msg_lower for k in [
+                "cartão do cliente", "portador", "comprador", "venda recusada",
+                "passou o cartão", "compra dele", "cartão dele", "transação do cliente",
+                "cliente da loja", "cliente do balcão", "cliente passou"
+            ])
+
+            if not eh_contexto_venda_terceiro:
+                outro_id, outro_data = outra_busca
+                msg_bloqueio = AIMessage(
+                    content=(
+                        f"🔒 **Acesso Não Permitido por Segurança:**\n\n"
+                        f"Esta sessão já está autenticada para o cliente **{client_data['nome']}**.\n"
+                        f"Por diretrizes de sigilo bancário e proteção de dados da Getnet, não é permitido consultar "
+                        f"informações de outro cliente ou documento nesta mesma conversa.\n\n"
+                        f"Caso deseje consultar outro cadastro, por favor inicie uma **Nova Conversa**."
+                    ),
+                    name="support",
+                )
+                return {
+                    "messages": [msg_bloqueio],
+                    "next_agent": "support",
+                    "authenticated_user_id": authenticated_user_id,
+                }
 
         # Atendimento normal usando as ferramentas com o cliente autenticado
         custom_system_prompt = SYSTEM_PROMPT.format(
@@ -155,8 +163,9 @@ def support_node(state: SupportState, config: RunnableConfig) -> dict:
         pergunta_a_responder = pending_query
         if not pergunta_a_responder:
             import re
-            texto_limpo = re.sub(r'[\d\.\-\/\s]|cliente\w*|cpf|cnpj|meu|o|id|é|e|:|código|codigo', '', last_user_message.lower()).strip()
-            if len(texto_limpo) > 5:
+            doc_padroes = r'\b(cliente\w*|cpf|cnpj|meu|o|meu\s+cpf\s+[ée]|id|c[óo]digo)\b|[\d\.\-\/\:\s]+'
+            texto_limpo = re.sub(doc_padroes, ' ', last_user_message.lower()).strip()
+            if len(texto_limpo) >= 2 and any(c.isalnum() for c in texto_limpo):
                 pergunta_a_responder = last_user_message
 
         if pergunta_a_responder:

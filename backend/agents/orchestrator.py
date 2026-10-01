@@ -7,6 +7,7 @@ Analisa a mensagem recebida e o contexto do cliente (user_id), decidindo
 qual agente especializado (Knowledge ou Support) deve processá-la.
 """
 
+import re
 import json
 import logging
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
@@ -123,7 +124,12 @@ def orchestrator_node(state: SupportState) -> dict:
 
     # 1. Se estiver em processo de escalonamento humano aguardando documento do cliente
     if pending_escalation:
-        cancela_keywords = ["cancela", "cancelar", "não precisa mais", "nao precisa mais", "desisti", "deixa pra lá", "deixa pra la", "esquece"]
+        cancela_keywords = [
+            "cancela", "cancelar", "não precisa mais", "nao precisa mais", 
+            "desisti", "deixa pra lá", "deixa pra la", "esquece",
+            "já resolvi", "ja resolvi", "já consegui", "ja consegui",
+            "não quero mais", "nao quero mais", "obrigado", "obrigada", "valeu", "tchau"
+        ]
         if not any(kw in (last_message or "").lower() for kw in cancela_keywords):
             logger.info("Roteamento determinístico: pending_escalation ativo -> escalation")
             return {
@@ -133,12 +139,22 @@ def orchestrator_node(state: SupportState) -> dict:
             }
         else:
             state["pending_escalation"] = False
+            state["awaiting_identification"] = False
             pending_escalation = False
+            awaiting_id = False
 
     # 2. Se o atendimento estiver aguardando o assunto da triagem de escalonamento humano (Nível 1)
     if awaiting_subject:
-        from backend.agents.escalation_agent import is_critical_incident
-        if is_human_insistence(last_message or ""):
+        from backend.agents.escalation_agent import is_critical_incident, is_frustration_with_bot
+        if is_critical_incident(last_message or "", messages) or is_frustration_with_bot(last_message or "", messages):
+            logger.info("Roteamento determinístico: incidente crítico ou frustração grave relatado durante triagem -> escalation")
+            return {
+                "next_agent": "escalation",
+                "category": "Human Handoff",
+                "routing_reason": "Incidente crítico ou frustração durante triagem de assunto",
+                "awaiting_escalation_subject": False,
+            }
+        elif is_human_insistence(last_message or ""):
             logger.info("Roteamento determinístico: insistência em humano durante triagem de assunto -> escalation")
             return {
                 "next_agent": "escalation",
@@ -146,26 +162,45 @@ def orchestrator_node(state: SupportState) -> dict:
                 "routing_reason": "Insistência em atendimento humano durante triagem de assunto",
                 "awaiting_escalation_subject": True,
             }
-        elif is_critical_incident(last_message or "", messages):
-            logger.info("Roteamento determinístico: incidente crítico relatado durante triagem -> escalation")
-            return {
-                "next_agent": "escalation",
-                "category": "Human Handoff",
-                "routing_reason": "Incidente crítico relatado durante triagem de assunto",
-                "awaiting_escalation_subject": False,
-            }
         else:
             # Usuário informou o assunto/problema. Limpa a espera de assunto para que o roteador avalie o tema livremente
             awaiting_subject = False
 
-    # 3. Se o suporte solicitou identificação anteriormente (CPF/ID), direciona deterministicamente para support
+    # 3. Se o suporte solicitou identificação anteriormente (CPF/ID)
     if awaiting_id and not awaiting_subject and not pending_escalation:
-        logger.info("Roteamento determinístico: awaiting_identification ativo -> support")
-        return {
-            "next_agent": "support",
-            "category": "Autenticação",
-            "routing_reason": "Fornecimento de dados de identificação solicitados pelo suporte",
-        }
+        from backend.agents.escalation_agent import is_critical_incident, is_frustration_with_bot
+        # A. Incidente crítico / emergência SEMPRE tem precedência
+        if is_critical_incident(last_message or "", messages):
+            logger.info("Incidente crítico detectado durante etapa de identificação -> escalation")
+            return {
+                "next_agent": "escalation",
+                "category": "Human Handoff",
+                "routing_reason": "Incidente crítico relatado durante identificação",
+            }
+
+        # B. Pedido explícito de atendente humano ou irritação com o bot tem precedência sobre o suporte
+        if is_human_insistence(last_message or "") or is_frustration_with_bot(last_message or "", messages):
+            logger.info("Pedido de atendente humano durante etapa de identificação -> escalation")
+            return {
+                "next_agent": "escalation",
+                "category": "Human Handoff",
+                "routing_reason": "Solicitação explícita de atendente humano ou irritação durante identificação",
+            }
+
+        # C. Se o usuário forneceu documento/ID ou tentou digitar código
+        from backend.agents.tools.support_tools import buscar_cliente_por_documento
+        eh_documento_valido = buscar_cliente_por_documento(last_message or "") is not None
+        eh_codigo_tentativa = bool(re.match(r"^[\s\w\.\-\/:]{2,30}$", (last_message or "").strip()))
+
+        if eh_documento_valido or eh_codigo_tentativa:
+            logger.info("Roteamento determinístico: awaiting_identification ativo com dados de identificação -> support")
+            return {
+                "next_agent": "support",
+                "category": "Autenticação",
+                "routing_reason": "Fornecimento de dados de identificação solicitados pelo suporte",
+            }
+        else:
+            logger.info("Mensagem discursiva durante awaiting_identification -> segue para avaliação semântica do roteador")
 
     # Monta breve histórico das últimas interações para evitar desvios semânticos fora de contexto
     recent_history = []

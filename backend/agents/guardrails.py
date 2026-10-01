@@ -48,10 +48,17 @@ _CODE_INJECTION_PATTERNS = [
 
 _ILLICIT_INTENTS_PATTERNS = [
     r"(como\s+clonar|clonagem\s+de)\s+(cart[ãa]o|maquininha)",
-    r"(como\s+fraudar|fraude\s+na|burlar)\s+(maquininha|pagamento|getnet|taxa)",
+    r"(como\s+fraudar|como\s+burlar|burlar)\s+(maquininha|pagamento|getnet|taxa|sistema)",
+    r"(cometer\s+fraude|aplicar\s+golpe)\s+(na|no|com|usando)",
     r"(lavar\s+dinheiro|lavagem\s+de\s+dinheiro)",
     r"(como\s+roubar|desviar)\s+(dinheiro|dados\s+de\s+cart[ãa]o)",
     r"(como\s+criar|gerar)\s+(malware|ransomware|trojan|vírus)",
+]
+
+_SUPPORT_SECURITY_EXCEPTIONS = [
+    "contestação", "contestar", "chargeback", "comprovante", "vítima", "vitima",
+    "recebi", "alegando", "suspeita", "me defender", "orientação", "orientacao",
+    "como proceder", "minha defesa", "tentaram passar", "cartão roubado que passaram"
 ]
 
 _OFFENSIVE_PATTERNS = [
@@ -80,9 +87,11 @@ def check_input_safety(text: str) -> Tuple[bool, str]:
             return False, "Tentativa de injeção de código executável ou SQL Injection."
 
     # 3. Checagem de Intenções Ilícitas ou Fraude
-    for pattern in _ILLICIT_INTENTS_PATTERNS:
-        if re.search(pattern, text_lower, re.IGNORECASE):
-            return False, "Solicitação com finalidade ilícita, fraude ou violação contratual/legal."
+    eh_relato_legitimo = any(exc in text_lower for exc in _SUPPORT_SECURITY_EXCEPTIONS)
+    if not eh_relato_legitimo:
+        for pattern in _ILLICIT_INTENTS_PATTERNS:
+            if re.search(pattern, text_lower, re.IGNORECASE):
+                return False, "Solicitação com finalidade ilícita, fraude ou violação contratual/legal."
 
     # 4. Checagem de Conteúdo Ofensivo / Abusivo
     for pattern in _OFFENSIVE_PATTERNS:

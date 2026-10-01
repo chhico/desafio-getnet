@@ -92,6 +92,18 @@ INSISTENCE_KEYWORDS = [
     "falar com uma pessoa", "me atenda um humano", "passa para humano"
 ]
 
+FRUSTRATION_KEYWORDS = [
+    "não me ajuda", "nao me ajuda", "não está ajudando", "nao esta ajudando",
+    "cansei dessa ia", "cansei desse robo", "cansei desse robô", "cansei de você",
+    "não quero falar com máquina", "nao quero falar com maquina",
+    "estou farto desse bot", "farto desse robo", "robô inútil", "robo inutil",
+    "ia inútil", "ia inutil", "pior atendimento", "cansei de falar com robo",
+    "cansei de falar com robô", "não aguento mais esse robô", "nao aguento mais esse robo",
+    "para de me enrolar", "não me enrola", "nao me enrola", "chega de robô", "chega de robo",
+    "bot inútil", "bot burro", "robô burro", "atendimento horrível", "atendimento péssimo",
+    "não resolve nada", "nao resolve nada", "estou farto", "cansei de esperar"
+]
+
 
 def is_critical_incident(message: str, messages: list) -> bool:
     """Verifica se a mensagem atual ou turnos recentes contêm evidência de incidente crítico (Fast-Track)."""
@@ -109,15 +121,26 @@ def is_human_insistence(message: str) -> bool:
     return any(kw in msg_low for kw in INSISTENCE_KEYWORDS)
 
 
+def is_frustration_with_bot(message: str, messages: list) -> bool:
+    """Verifica se há frustração, irritação ou rejeição expressa ao assistente/robô."""
+    text_to_check = message.lower()
+    for m in messages[-3:]:
+        if isinstance(m, HumanMessage) or getattr(m, "type", "") == "human":
+            text_to_check += " " + (m.content or "").lower()
+    return any(kw in text_to_check for kw in FRUSTRATION_KEYWORDS)
+
+
 def escalation_node(state: SupportState) -> dict:
     """
     Nó do Agente de Escalonamento para Humanos.
     Implementa:
-    1. Fast-Track Imediato para Incidentes Críticos Objetivos (Fraude, PED Tamper, Sinistro, Bloqueio Judicial).
-    2. Triagem de 2 Níveis para Pedidos Genéricos de Atendimento Humano:
-       - Nível 1: Acolhimento e solicitação do assunto para tentar agilizar/direcionar.
-       - Nível 2: Insistência educada informando a rapidez do autoatendimento vs fila de espera.
-       - Nível 3: Handoff formal, exigindo identificação por documento (CPF/CNPJ).
+    1. Fast-Track Imediato para:
+       - Incidentes Críticos Objetivos (Fraude, PED Tamper, Sinistro, Bloqueio Judicial).
+       - Irritação, estresse ou frustração evidente com o robô/IA (Acolhimento Anti-Churn).
+    2. Triagem Assistida para Pedidos Genéricos de Atendimento Humano:
+       - Nível 1: Acolhimento e solicitação do assunto para triagem e direcionamento de fila.
+       - Nível 2: Insistência educada sobre agilidade do autoatendimento vs fila de espera.
+       - Nível 3: Handoff formal imediato (seja nominal com documento ou como visitante geral).
     """
     messages = state.get("messages", [])
     last_user_message = get_last_human_message(messages)
@@ -129,15 +152,17 @@ def escalation_node(state: SupportState) -> dict:
     had_self_service = state.get("had_self_service_attempt", False)
 
     # -----------------------------------------------------------------------
-    # 1. Verificação de Incidente Crítico (Fast-Track)
+    # 1. Verificação de Fast-Track (Incidente Crítico ou Irritação com Bot)
     # -----------------------------------------------------------------------
     is_critical = is_critical_incident(last_user_message, messages)
+    is_frustrated = is_frustration_with_bot(last_user_message, messages)
+    is_fast_track = is_critical or is_frustrated
     has_doc = buscar_cliente_por_documento(last_user_message) is not None
 
-    # Se NÃO for incidente crítico e NÃO estiver aguardando documento pós-confirmação:
-    if not is_critical and not pending_escalation:
-        # Nível 1 de Triagem: primeiro pedido de humano
-        if retries == 0 and not had_self_service:
+    # Se NÃO for Fast-Track e NÃO estiver aguardando documento pós-confirmação:
+    if not is_fast_track and not pending_escalation:
+        # Nível 1 de Triagem: primeiro pedido genérico de humano (sem assunto e sem doc prévio)
+        if retries == 0 and not had_self_service and not has_doc and not authenticated_user:
             msg_triagem_1 = AIMessage(
                 content=(
                     "Com certeza posso transferir você para um especialista humano! 😊\n\n"
@@ -175,60 +200,28 @@ def escalation_node(state: SupportState) -> dict:
                 "originated_from_human_intent": True,
             }
 
-        # Nível 3: Cliente reiterou a insistência ou enviou documento -> Aceita o handoff!
+        # Nível 3: Cliente reiterou insistência, enviou documento ou explicou o assunto -> Transbordo Imediato!
 
     # -----------------------------------------------------------------------
-    # 2. Verificação de Identificação do Cliente (CPF/CNPJ Obrigatório)
+    # 2. Identificação do Cliente (Nominal se houver documento, ou Visitante sem bloqueio)
     # -----------------------------------------------------------------------
-    if not authenticated_user or authenticated_user not in _CLIENT_DATABASE:
-        # Tenta identificar o cliente pelo documento informado na mensagem atual
+    client_data = None
+    if authenticated_user and authenticated_user in _CLIENT_DATABASE:
+        client_data = _CLIENT_DATABASE[authenticated_user]
+        nome_cliente = client_data.get("nome", authenticated_user)
+        cnpj_cpf = client_data.get("cnpj") or client_data.get("cpf", "N/A")
+    else:
+        # Tenta identificar o cliente pelo documento informado na mensagem
         busca = buscar_cliente_por_documento(last_user_message)
         if busca:
             authenticated_user, client_data = busca
+            nome_cliente = client_data.get("nome", authenticated_user)
+            cnpj_cpf = client_data.get("cnpj") or client_data.get("cpf", "N/A")
         else:
-            # Cliente ainda não informou documento válido
-            if awaiting_id:
-                msg_erro = AIMessage(
-                    content=(
-                        f"❌ **Documento não localizado:**\n\n"
-                        f"Não encontramos nenhum cadastro ativo com o documento/identificador informado (`{last_user_message}`).\n\n"
-                        f"Por favor, verifique os dados e informe novamente seu **documento (CPF, CNPJ ou código de cliente como 'cliente2024')** para podermos transferir seu atendimento com segurança."
-                    ),
-                    name="escalation",
-                )
-                return {
-                    "messages": [msg_erro],
-                    "next_agent": "escalation",
-                    "category": "Human Handoff / Escalonamento",
-                    "awaiting_identification": True,
-                    "pending_escalation": True,
-                    "escalation_intent_retries": retries,
-                }
-
-            msg_solicitacao = AIMessage(
-                content=(
-                    "Compreendo a necessidade de atendimento especializado. Para transferir você para o "
-                    "especialista adequado e vincular o protocolo oficial ao seu cadastro com total segurança, "
-                    "por favor confirme seu **documento (CPF, CNPJ ou código de cliente)**:"
-                ),
-                name="escalation",
-            )
-            return {
-                "messages": [msg_solicitacao],
-                "next_agent": "escalation",
-                "category": "Human Handoff / Escalonamento",
-                "routing_reason": "Solicitação de identificação prévia para abertura de chamado nominal",
-                "awaiting_identification": True,
-                "pending_escalation": True,
-                "escalation_intent_retries": retries,
-            }
-
-    # -----------------------------------------------------------------------
-    # 3. Cliente devidamente identificado! Recupera os dados cadastrais
-    # -----------------------------------------------------------------------
-    client_data = _CLIENT_DATABASE[authenticated_user]
-    nome_cliente = client_data.get("nome", authenticated_user)
-    cnpj_cpf = client_data.get("cnpj") or client_data.get("cpf", "N/A")
+            # Cliente não informado / Visitante / Sem documento: Transborda com sucesso sem bloqueio!
+            authenticated_user = "cliente_visitante"
+            nome_cliente = "Cliente Não Identificado"
+            cnpj_cpf = "Não informado (Validar no atendimento)"
 
     # 4. Geração de Protocolo Oficial Getnet
     protocol = f"GET-2026-{random.randint(1000, 9999)}"
@@ -287,6 +280,11 @@ def escalation_node(state: SupportState) -> dict:
     )
 
     # 7. Mensagem amigável e nominal para o cliente em tempo real
+    if authenticated_user == "cliente_visitante":
+        info_cliente = "👤 **Cliente:** Não identificado (confirme seus dados com o especialista no início da conversa)"
+    else:
+        info_cliente = f"👤 **Cliente Identificado:** {nome_cliente} (`{cnpj_cpf}`)"
+
     msg_cliente = AIMessage(
         content=(
             f"🤝 **Conectando com Atendimento Humano em Tempo Real**\n\n"
@@ -295,7 +293,7 @@ def escalation_node(state: SupportState) -> dict:
             f"🏢 **Fila Especializada:** {queue_target}\n"
             f"⏱️ **Status da Conexão:** Em atendimento imediato ({tempo_estimado})\n"
             f"📋 **Protocolo Oficial:** `{protocol}`\n"
-            f"👤 **Cliente Identificado:** {nome_cliente} (`{cnpj_cpf}`)\n\n"
+            f"{info_cliente}\n\n"
             f"📋 **Contexto Transmitido ao Atendente:**\n"
             f"> *\"{summary_text}\"*\n\n"
             f"O operador **{operador_conectado}** já está com todo o seu histórico e dados na tela. "
