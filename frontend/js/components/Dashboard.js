@@ -923,6 +923,10 @@ const Dashboard = () => {
                             className="btn-header-obs"
                             id="btn-header-obs"
                             title="Abrir Dashboard de Observabilidade & Telemetria"
+                            onClick={(e) => {
+                                e.preventDefault();
+                                window.location.href = "/dashboard/";
+                            }}
                             style={{
                                 display: "inline-flex",
                                 alignItems: "center",

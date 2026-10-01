@@ -1,6 +1,14 @@
-// Base da API relativa (agnóstica de porta, host ou protocolo)
+// Base da API relativa e adaptável (agnóstica de porta, host ou protocolo)
 // Permite override opcional via window.__API_BASE__ se necessário
-const API_BASE = window.__API_BASE__ || "/api/v1";
+const getDefaultApiBase = () => {
+    if (window.__API_BASE__) return window.__API_BASE__;
+    const port = window.location.port;
+    if (port === "3001" || port === "3000") {
+        return "http://localhost:8001/api/v1";
+    }
+    return "/api/v1";
+};
+const API_BASE = getDefaultApiBase();
 
 /**
  * Wrapper centralizado para fetch API.
