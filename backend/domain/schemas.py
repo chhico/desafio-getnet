@@ -22,6 +22,9 @@ class HarnessTrace(BaseModel):
     estimated_cost_usd: float = Field(0.0, description="Custo estimado em dólares")
     guardrail_safe: bool = Field(True, description="Status de integridade avaliado pelo Guardrail")
     buffer_messages_count: int = Field(0, description="Quantidade real de mensagens acumuladas no histórico")
+    human_messages_count: int = Field(1, description="Quantidade de mensagens enviadas pelo usuário")
+    ai_messages_count: int = Field(1, description="Quantidade de mensagens/sínteses geradas pela IA")
+    tool_messages_count: int = Field(0, description="Quantidade de retornos intermediários de ferramentas")
     state_snapshot: dict[str, Any] = Field(default_factory=dict, description="Snapshot das variáveis ativas persistidas no StateGraph")
 
 class ChatResponse(BaseModel):

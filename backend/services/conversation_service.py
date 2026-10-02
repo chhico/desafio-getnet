@@ -1,7 +1,7 @@
 import time
 import re
 from typing import Tuple, Optional
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage, ToolMessage
 from backend.domain.schemas import ChatResponse, HarnessTrace
 from backend.core.config import settings
 from backend.infrastructure.telemetry import telemetry_collector
@@ -161,9 +161,15 @@ class ConversationService:
         if result.get("human_handoff_requested"):
             state_snapshot["transbordo_solicitado"] = True
 
+        # Contagem analítica e categorizada de mensagens no buffer StateGraph
+        human_messages_count = sum(1 for m in all_msgs if isinstance(m, HumanMessage) or getattr(m, "type", "") == "human")
+        tool_messages_count = sum(1 for m in all_msgs if isinstance(m, ToolMessage) or getattr(m, "type", "") == "tool")
+        ai_messages_count = sum(1 for m in all_msgs if isinstance(m, AIMessage) or getattr(m, "type", "") == "ai")
+        turn_count = max(1, human_messages_count)
+
         # Montagem do objeto de telemetria e inspeção do Harness
         trace = HarnessTrace(
-            turn_count=max(1, len(all_msgs) // 2),
+            turn_count=turn_count,
             thread_id=final_thread_id,
             user_id=result.get("authenticated_user_id") or user_id,
             execution_mode="SANDBOX_SQLITE_LOCAL",
@@ -178,6 +184,9 @@ class ConversationService:
             estimated_cost_usd=estimated_cost_usd,
             guardrail_safe=result.get("is_safe", True),
             buffer_messages_count=len(all_msgs),
+            human_messages_count=human_messages_count,
+            ai_messages_count=ai_messages_count,
+            tool_messages_count=tool_messages_count,
             state_snapshot=state_snapshot,
         )
 
