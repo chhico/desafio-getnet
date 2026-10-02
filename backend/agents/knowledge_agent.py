@@ -35,7 +35,11 @@ DIRETRIZES DE ENCADEAMENTO INTELIGENTE (CACHE-FIRST COM FALLBACK ONLINE):
   2º Passo (Fallback Web Oficial): Se `consultar_base_local_getnet` responder que nenhuma informação oficial foi encontrada (ou a resposta for incompleta), chame IMEDIATAMENTE `consultar_base_web_getnet` no mesmo turno para varrer em tempo real os portais oficiais da Getnet e suas subpáginas.
   NUNCA use `pesquisar_web` para assuntos internos da Getnet.
 - Para perguntas externas (tempo, moedas, notícias gerais): chame diretamente `pesquisar_web`.
-- Seja direto, cortês e coeso. Nunca invente dados técnicos ou taxas.
+- Seja direto, cortês e coeso.
+- DIRETRIZ ESTRITA DE FIDELIDADE (ANTI-ALUCINAÇÃO):
+  * Você só pode afirmar a existência de produtos, regras, serviços ou benefícios (como programas de fidelidade, planos, acúmulo de pontos ou milhas) se eles estiverem EXPLICITAMENTE comprovados nos trechos retornados pelas ferramentas.
+  * NUNCA invente ou presuma que um serviço existe se os trechos retornados não contiverem a informação exata da dúvida.
+  * Se o retorno das ferramentas indicar que nenhuma informação foi localizada (ou se os trechos recuperados forem genéricos e não responderem à pergunta específica), declare com clareza e transparência que o serviço/informação não foi localizado nos canais oficiais da Getnet.
 
 DIRETRIZ DE CONTEXTO TEMPORAL E FIDELIDADE ÀS FONTES:
 - {contexto_temporal}
@@ -56,14 +60,30 @@ DIRETRIZ DE CÓDIGOS DE ERRO E RECUSA DE TRANSAÇÕES (ISO 8583 / GETNET):
   * Código 96: Falha de comunicação ou timeout temporário de rede.
 
 OBRIGATÓRIO — IDENTIFICAÇÃO E CITAÇÃO DAS FONTES:
-- Sempre que você utilizar informações recuperadas pelas ferramentas (`consultar_base_local_getnet`, `consultar_base_web_getnet` ou `pesquisar_web`), você DEVE OBRIGATORIAMENTE indicar ao final da resposta a(s) fonte(s) onde a resposta foi encontrada.
-- Especifique claramente se a fonte é um Arquivo físico local ou uma URL web.
-- Formate a seção de fontes exatamente no final da sua mensagem com o seguinte padrão:
+- Sempre que você responder a uma consulta de conhecimento, você DEVE OBRIGATORIAMENTE indicar ao final da resposta a seção de fontes exatamente no rodapé com o seguinte padrão:
 
 ---
 📌 **Fontes consultadas:**
-- 📄 Arquivo: `<nome_do_arquivo>` (ex: `Perguntas Frequentes (FAQ).txt`, `Procedimento de Onboarding de Novos Clientes.pdf`)
-- 🌐 URL: `<url_completa>` (ex: `https://site.getnet.com.br/blog/...` ou `https://www.getnet.eu/pt/suporte/...`)
+
+DIFERENCIE COM EXATIDÃO A ORIGEM DE CADA FONTE UTILIZADA:
+1. Se a informação veio de um Arquivo físico da base de conhecimento (PDFs, manuais, documentos):
+   - 📄 Arquivo: `<nome_do_arquivo>` (ex: `Preços e tarifas para TPA _ Getnet.pdf`, `Procedimento de Onboarding.pdf`)
+2. Se a informação veio de uma URL armazenada/pré-indexada no banco vetorial ({rag_async_urls}):
+   - 🌐 URL da Base Indexada: `<url_completa>` (ex: `https://site.getnet.com.br/get-ajuda/...` ou `https://www.getnet.eu/pt/suporte/...`)
+3. Se a informação veio de uma URL da varredura online em tempo real no site ({rag_sync_urls}):
+   - 🌐 URL Online (Varredura em tempo real): `<url_completa>` (ex: `https://site.getnet.com.br/getnet-lanca-get-code...` ou artigos do blog)
+4. Se a informação veio de busca web externa de uso geral (DuckDuckGo):
+   - 🌐 URL Web Externa: `<url_completa>`
+
+QUANDO NENHUMA INFORMAÇÃO OFICIAL FOR ENCONTRADA (NÃO LOCALIZADO):
+- Se após consultar as ferramentas nenhuma informação for encontrada sobre a Getnet (ou seja, ausente nos arquivos locais, ausente nas páginas indexadas e ausente no crawler online), responda cordialmente explicando que não localizou registros do serviço/procedimento nos canais oficiais e OBRIGATORIAMENTE declare na seção final de fontes consultadas:
+
+---
+📌 **Fontes consultadas:**
+- ⚠️ Nenhuma informação oficial localizada:
+  - 📄 Arquivos da Base: Não localizado
+  - 🌐 URLs da Base Indexada ({rag_async_urls}): Não localizado
+  - 🌐 URLs de Varredura Online ({rag_sync_urls}): Não localizado
 
 (Atenção: cite apenas as fontes reais que de fato fundamentaram a resposta dada. Não invente arquivos ou URLs que não constam no retorno das ferramentas).
 """
@@ -90,7 +110,14 @@ def knowledge_node(state: SupportState, config: RunnableConfig) -> dict:
             "category": direct_fast["category"],
         }
 
-    dynamic_prompt = SYSTEM_PROMPT.format(contexto_temporal=get_system_clock_context())
+    rag_async_urls = getattr(settings, "RAG_ASYNC_URLS", "https://www.getnet.eu/pt/suporte, https://site.getnet.com.br/get-ajuda/")
+    rag_sync_urls = getattr(settings, "RAG_SYNC_URLS", "https://site.getnet.com.br/blog/")
+
+    dynamic_prompt = SYSTEM_PROMPT.format(
+        contexto_temporal=get_system_clock_context(),
+        rag_async_urls=rag_async_urls,
+        rag_sync_urls=rag_sync_urls,
+    )
     messages = [SystemMessage(content=dynamic_prompt)] + state["messages"]
     updated_messages = run_agent_with_tools(
         llm_with_tools=llm_with_tools,

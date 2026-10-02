@@ -31,6 +31,8 @@ def consultar_base_local_getnet(query: str, num_resultados: int = 4) -> str:
     """
     import os
     try:
+        from backend.core.config import settings
+        raw_async = getattr(settings, "RAG_ASYNC_URLS", "https://www.getnet.eu/pt/suporte, https://site.getnet.com.br/get-ajuda/")
         vs = _get_vectorstore()
         docs = vs.similarity_search(query, k=num_resultados)
         if not docs:
@@ -42,7 +44,7 @@ def consultar_base_local_getnet(query: str, num_resultados: int = 4) -> str:
             if raw_source.startswith("http://") or raw_source.startswith("https://"):
                 title = doc.metadata.get("title")
                 title_suffix = f" ({title})" if title else ""
-                source_label = f"🌐 URL: {raw_source}{title_suffix}"
+                source_label = f"🌐 URL da Base Indexada ({raw_async}): {raw_source}{title_suffix}"
             elif raw_source != "Base Oficial Getnet":
                 filename = os.path.basename(raw_source)
                 source_label = f"📄 Arquivo: {filename}"
@@ -88,7 +90,24 @@ def consultar_base_web_getnet(query: str, max_subpaginas: int = 3) -> str:
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
 
-    query_words = set(re.findall(r"\w{3,}", query.lower()))
+    STOPWORDS = {
+        "como", "para", "qual", "quais", "onde", "quando", "quem", "porque", "por",
+        "com", "sem", "uma", "uns", "umas", "mais", "menos", "muito", "pouco",
+        "seu", "sua", "seus", "suas", "meu", "minha", "nosso", "nossa", "dele", "dela",
+        "nas", "nos", "das", "dos", "pela", "pelo", "pelas", "pelos", "sobre", "entre",
+        "está", "estao", "estão", "esta", "estas", "este", "estes", "esse", "esses",
+        "essa", "essas", "isso", "aquilo", "aquele", "aquela", "aqui", "ali", "la", "lá",
+        "funciona", "funcionar", "saber", "quero", "gostaria", "pode", "podem",
+        "getnet"  # Termo genérico onipresente em todas as páginas do portal
+    }
+
+    all_words = re.findall(r"\w{3,}", query.lower())
+    significant_words = set(w for w in all_words if w not in STOPWORDS)
+    if not significant_words:
+        significant_words = set(all_words)
+
+    min_threshold = min(2, len(significant_words)) if significant_words else 1
+
     visited_urls = []
     matched_snippets = []
 
@@ -126,8 +145,8 @@ def consultar_base_web_getnet(query: str, max_subpaginas: int = 3) -> str:
                     parsed = urlparse(link)
                     if parsed.netloc == domain or not base_path:
                         if link not in visited_in_domain and not any(ext in link.lower() for ext in [".png", ".jpg", ".pdf", ".zip", ".css", ".js"]):
-                            # Pontua relevância do link com base nas palavras da query
-                            score = sum(1 for w in query_words if w in link.lower())
+                            # Pontua relevância do link com base nos termos significativos
+                            score = sum(1 for w in significant_words if w in link.lower())
                             candidate_sublinks.append((score, link))
 
                 # Ordena os links mais promissores e seleciona até max_subpaginas
@@ -141,8 +160,8 @@ def consultar_base_web_getnet(query: str, max_subpaginas: int = 3) -> str:
                 for paragraph in root_text.split("\n"):
                     p = paragraph.strip()
                     if len(p) >= 40:
-                        matches = sum(1 for w in query_words if w in p.lower())
-                        if matches > 0:
+                        matches = sum(1 for w in significant_words if w in p.lower())
+                        if matches >= min_threshold:
                             matched_snippets.append({"score": matches, "url": root_url, "text": p[:300]})
 
         except Exception as e:
@@ -161,8 +180,8 @@ def consultar_base_web_getnet(query: str, max_subpaginas: int = 3) -> str:
                     for paragraph in sub_text.split("\n"):
                         p = paragraph.strip()
                         if len(p) >= 40:
-                            matches = sum(1 for w in query_words if w in p.lower())
-                            if matches > 0:
+                            matches = sum(1 for w in significant_words if w in p.lower())
+                            if matches >= min_threshold:
                                 matched_snippets.append({"score": matches, "url": sub_url, "text": p[:300]})
             except Exception:
                 continue
@@ -170,11 +189,11 @@ def consultar_base_web_getnet(query: str, max_subpaginas: int = 3) -> str:
     if not matched_snippets:
         if visited_urls:
             return (
-                f"Varredura em tempo real concluída nas páginas oficiais da Getnet "
+                f"Varredura em tempo real concluída nas páginas oficiais da Getnet ({raw_urls}) "
                 f"({len(visited_urls)} URLs e subpáginas verificadas), mas nenhuma informação específica "
                 f"para '{query}' foi localizada."
             )
-        return "Não foi possível conectar aos portais oficiais da Getnet para consulta online no momento."
+        return f"Não foi possível conectar aos portais oficiais da Getnet ({raw_urls}) para consulta online no momento."
 
     # Ordena os trechos mais relevantes
     matched_snippets.sort(key=lambda x: x["score"], reverse=True)
@@ -189,9 +208,9 @@ def consultar_base_web_getnet(query: str, max_subpaginas: int = 3) -> str:
         if len(unique_snippets) >= 4:
             break
 
-    result_blocks = [f"Resultados da varredura online nos portais oficiais da Getnet para '{query}':\n"]
+    result_blocks = [f"Resultados da varredura online nos portais oficiais da Getnet ({raw_urls}) para '{query}':\n"]
     for i, snip in enumerate(unique_snippets, 1):
-        result_blocks.append(f"Fonte [🌐 URL: {snip['url']}] - Trecho {i}:\n{snip['text']}")
+        result_blocks.append(f"Fonte [🌐 URL Online (Varredura em tempo real - {snip['url']}): {snip['url']}] - Trecho {i}:\n{snip['text']}")
 
     return "\n\n".join(result_blocks)
 
@@ -213,7 +232,7 @@ def pesquisar_web(query: str, max_resultados: int = 4) -> str:
         results = []
         with DDGS() as ddgs:
             for r in ddgs.text(query, max_results=max_resultados):
-                results.append(f"🌐 URL: {r['href']}\n   Título: {r['title']}\n   Conteúdo: {r['body']}")
+                results.append(f"🌐 URL Web Externa: {r['href']}\n   Título: {r['title']}\n   Conteúdo: {r['body']}")
         
         if not results:
             return f"Nenhum resultado recente encontrado na web para '{query}'."
