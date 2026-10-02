@@ -412,7 +412,7 @@ const HarnessTraceInspector = ({ trace }) => {
                     <div className="harness-panel-header">
                         <div className="panel-title">
                             <span className="panel-icon">🔬</span>
-                            <strong>Agent Harness & Trajectory Inspector</strong>
+                            <strong>Agent Harness</strong>
                         </div>
                         <div className="panel-meta">
                             <span>Thread: <code>{trace.thread_id ? (trace.thread_id.length > 20 ? trace.thread_id.substring(0, 18) + '...' : trace.thread_id) : 'local'}</code></span>
@@ -426,7 +426,7 @@ const HarnessTraceInspector = ({ trace }) => {
                         <div className="harness-card card-trajectory">
                             <div className="card-header">
                                 <span className="card-tag">Pilar 1</span>
-                                <h4>🧭 Trajetória no Grafo (Trajectory Evaluation)</h4>
+                                <h4>🧭 Trajetória no Grafo</h4>
                             </div>
                             <div className="flow-step-chain">
                                 {nodes.map((n, i) => {
@@ -466,27 +466,104 @@ const HarnessTraceInspector = ({ trace }) => {
                         <div className="harness-card card-isolation">
                             <div className="card-header">
                                 <span className="card-tag">Pilar 2</span>
-                                <h4>🛡️ Isolamento & Mocks (Side-Effects & Safety)</h4>
+                                <h4>🔄 Estado Persistido na Memória</h4>
+                            </div>
+
+                            <div className="multiturn-info">
+                                <div className="info-row">
+                                    <span>Diálogo Ativo (Visível no Chat):</span>
+                                    <strong style={{ color: "#166534" }}>
+                                        {trace.turn_count || 1}º Turno ({(trace.human_messages_count || trace.turn_count || 1) + (trace.turn_count || 1)} msgs)
+                                    </strong>
+                                </div>
+                                <div className="info-row">
+                                    <span>Buffer StateGraph (ReAct):</span>
+                                    <strong>{trace.buffer_messages_count || 2} msgs acumuladas</strong>
+                                </div>
+                                <div className="buffer-chips-row">
+                                    <span className="buffer-chip chip-human" title="Mensagens enviadas pelo cliente">
+                                        👤 {trace.human_messages_count || trace.turn_count || 1} {((trace.human_messages_count || trace.turn_count || 1) === 1) ? 'Pergunta' : 'Perguntas'}
+                                    </span>
+                                    <span className="buffer-chip chip-ai" title="Respostas finais geradas pelo especialista">
+                                        🤖 {trace.ai_messages_count || trace.turn_count || 1} {((trace.ai_messages_count || trace.turn_count || 1) === 1) ? 'Resposta IA' : 'Respostas IA'}
+                                    </span>
+                                    {((trace.tool_messages_count > 0) || ((trace.buffer_messages_count || 0) > ((trace.turn_count || 1) * 2))) && (
+                                        <span className="buffer-chip chip-tool" title="Passos intermediários e consultas a ferramentas corporativas">
+                                            ⚙️ {trace.tool_messages_count || ((trace.buffer_messages_count || 0) - ((trace.turn_count || 1) * 2))} Passos ReAct (Tools)
+                                        </span>
+                                    )}
+                                </div>
+                                {/*<div className="buffer-explainer">
+                                    💡 <em>O histórico preserva consultas de ferramentas no buffer de contexto para manter o raciocínio sem poluir o diálogo com o usuário.</em>
+                                </div>*/}
+                                <div className="state-snapshot-container">
+                                    <div className="sub-label">Variáveis Ativas no StateGraph:</div>
+                                    {trace.state_snapshot && Object.keys(trace.state_snapshot).length > 0 ? (
+                                        <div className="state-vars-grid">
+                                            {Object.entries(trace.state_snapshot).map(([key, val]) => (
+                                                <div key={key} className="state-var-pill">
+                                                    <span className="var-key">{key}:</span>
+                                                    <code className="var-val">{String(val)}</code>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="tool-empty-msg">Nenhuma variável de negócio pendente no estado.</div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 3. Scoring & FinOps */}
+                        <div className="harness-card card-metrics">
+                            <div className="card-header">
+                                <span className="card-tag">Pilar 3</span>
+                                <h4>📊 Métricas & FinOps</h4>
+                            </div>
+                            <div className="metrics-triad">
+                                <div className="metric-box">
+                                    <span className="metric-num">{trace.latency_ms} <small>ms</small></span>
+                                    <span className="metric-desc">Latência de Turno</span>
+                                    <span className="metric-benchmark">P95 &lt; 1500ms</span>
+                                </div>
+                                <div className="metric-box">
+                                    <span className="metric-num">~{trace.estimated_tokens}</span>
+                                    <span className="metric-desc">Tokens Estimados</span>
+                                    <span className="metric-benchmark">Prompt + Output</span>
+                                </div>
+                                <div className="metric-box">
+                                    <span className="metric-num">${trace.estimated_cost_usd}</span>
+                                    <span className="metric-desc">Custo do Turno</span>
+                                    <span className="metric-benchmark">FinOps Otimizado</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 4. Estado Persistido na Memória (State Snapshot Real) */}
+                        <div className="harness-card card-multiturn">
+                            <div className="card-header">
+                                <span className="card-tag">Pilar 4</span>
+                                <h4>🛡️ Efeitos Colaterais & Segurança</h4>
                             </div>
                             <ul className="harness-checklist">
-                                <li>
+                                {/*<li>
                                     <span className="check-icon">📦</span>
                                     <div>
                                         <strong>Ambiente:</strong>
                                         <span className="badge-env">{trace.execution_mode}</span>
                                     </div>
-                                </li>
+                                </li>*/}
                                 <li>
                                     <span className="check-icon">{trace.mutation_performed ? "📝" : "🔒"}</span>
                                     <div>
-                                        <strong>Efeitos em Produção:</strong>
+                                        <strong>Tipo de Iteração:</strong>
                                         {trace.mutation_performed ? (
                                             <span className="text-warning" title={trace.mutation_details || "Chamado salvo na base de homologação"}>
-                                                ⚠️ Mutação Contida em Sandbox (Registro inserido no banco local sem impactar CRM de Produção)
+                                                ⚠️ Operação de Escrita
                                             </span>
                                         ) : (
                                             <span className="text-safe">
-                                                🔒 Zero Efeito Colateral (Operação Idempotente de Leitura)
+                                                🔒 Operação de Leitura
                                             </span>
                                         )}
                                     </div>
@@ -514,60 +591,6 @@ const HarnessTraceInspector = ({ trace }) => {
                                     </div>
                                 </li>
                             </ul>
-                        </div>
-
-                        {/* 3. Scoring & FinOps */}
-                        <div className="harness-card card-metrics">
-                            <div className="card-header">
-                                <span className="card-tag">Pilar 3</span>
-                                <h4>📊 Métricas & FinOps (Scoring)</h4>
-                            </div>
-                            <div className="metrics-triad">
-                                <div className="metric-box">
-                                    <span className="metric-num">{trace.latency_ms} <small>ms</small></span>
-                                    <span className="metric-desc">Latência de Turno</span>
-                                    <span className="metric-benchmark">P95 &lt; 1500ms</span>
-                                </div>
-                                <div className="metric-box">
-                                    <span className="metric-num">~{trace.estimated_tokens}</span>
-                                    <span className="metric-desc">Tokens Estimados</span>
-                                    <span className="metric-benchmark">Prompt + Output</span>
-                                </div>
-                                <div className="metric-box">
-                                    <span className="metric-num">${trace.estimated_cost_usd}</span>
-                                    <span className="metric-desc">Custo do Turno</span>
-                                    <span className="metric-benchmark">FinOps Otimizado</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* 4. Estado Persistido na Memória (State Snapshot Real) */}
-                        <div className="harness-card card-multiturn">
-                            <div className="card-header">
-                                <span className="card-tag">Pilar 4</span>
-                                <h4>🔄 Estado Persistido na Memória (State Snapshot)</h4>
-                            </div>
-                            <div className="multiturn-info">
-                                <div className="info-row">
-                                    <span>Mensagens no Buffer de Contexto:</span>
-                                    <strong>{trace.buffer_messages_count || 2} msgs acumuladas</strong>
-                                </div>
-                                <div className="state-snapshot-container">
-                                    <div className="sub-label">Variáveis Ativas no StateGraph:</div>
-                                    {trace.state_snapshot && Object.keys(trace.state_snapshot).length > 0 ? (
-                                        <div className="state-vars-grid">
-                                            {Object.entries(trace.state_snapshot).map(([key, val]) => (
-                                                <div key={key} className="state-var-pill">
-                                                    <span className="var-key">{key}:</span>
-                                                    <code className="var-val">{String(val)}</code>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    ) : (
-                                        <div className="tool-empty-msg">Nenhuma variável de negócio pendente no estado.</div>
-                                    )}
-                                </div>
-                            </div>
                         </div>
                     </div>
                 </div>
