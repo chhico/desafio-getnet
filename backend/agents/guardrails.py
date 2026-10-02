@@ -48,7 +48,7 @@ _CODE_INJECTION_PATTERNS = [
 
 _ILLICIT_INTENTS_PATTERNS = [
     r"(como\s+clonar|clonagem\s+de)\s+(cart[ãa]o|maquininha)",
-    r"(como\s+fraudar|como\s+burlar|burlar)\s+(maquininha|pagamento|getnet|taxa|sistema)",
+    r"(como\s+fraudar|como\s+burlar|burlar)\s+(o\s+|a\s+|os\s+|as\s+)?(maquininha|pagamento|getnet|taxa|taxas|sistema)",
     r"(cometer\s+fraude|aplicar\s+golpe)\s+(na|no|com|usando)",
     r"(lavar\s+dinheiro|lavagem\s+de\s+dinheiro)",
     r"(como\s+roubar|desviar)\s+(dinheiro|dados\s+de\s+cart[ãa]o)",

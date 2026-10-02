@@ -284,9 +284,8 @@ def orchestrator_node(state: SupportState) -> dict:
                 content=(
                     "🧭 **Solicitação fora do escopo de atendimento**\n\n"
                     "Sou o assistente virtual da Getnet, especializado em soluções de pagamento, "
-                    "maquininhas, taxas e serviços financeiros para o seu negócio.\n\n"
-                    "Não comercializamos produtos de varejo (como roupas, calçados ou alimentos) "
-                    "e este canal não atende a solicitações desse tipo.\n\n"
+                    "maquininhas, taxas e serviços financeiros para o seu negócio."
+                    "Este canal não atende a solicitações desse tipo.\n\n"
                     "Como posso ajudar você com os serviços, maquininhas ou soluções de pagamento da Getnet?"
                 ),
                 name="guardrail_block",
