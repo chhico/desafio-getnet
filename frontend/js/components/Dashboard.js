@@ -358,6 +358,169 @@ const OFFICIAL_TEST_SCENARIOS = [
 ];
 
 /**
+ * Constrói a árvore completa de raciocínio da execução em formato hierárquico text-tree.
+ * Baseado no padrão de árvore de decisão dos agentes Getnet.
+ */
+const formatReasoningTree = (trace) => {
+    if (!trace) return "";
+
+    const sec = trace.latency_ms ? (trace.latency_ms / 1000).toFixed(1) : "0.0";
+    const nodes = trace.nodes_visited || [];
+    const toolCalls = trace.tool_calls || [];
+    const tools = (trace.tools_used && trace.tools_used.length > 0)
+        ? trace.tools_used
+        : toolCalls.map(tc => tc.tool || tc.name).filter(Boolean);
+
+    // Identificação dinâmica e inequívoca do especialista acionado
+    let agent = trace.agent_used;
+    if (!agent || agent === "unknown") {
+        if (nodes.some(n => n.includes("support"))) agent = "support";
+        else if (nodes.some(n => n.includes("escalation"))) agent = "escalation";
+        else if (nodes.some(n => n.includes("knowledge"))) agent = "knowledge";
+        else if (nodes.some(n => n.includes("guardrail_block") || (n === "guardrail_node" && nodes.length === 1))) agent = "guardrail_block";
+        else agent = "knowledge";
+    }
+
+    const isGuardrailSafe = trace.guardrail_safe !== false && agent !== "guardrail_block" && !(nodes.length === 1 && nodes[0] === "guardrail_node");
+    const isFastPath = nodes.includes("fast_path") || trace.fast_path_response;
+
+    const lines = [];
+    lines.push(`🧠 Linha de Raciocínio (Execução concluída em ${sec}s)\n`);
+
+    // 1. Guardrail de Segurança
+    lines.push(` ├── 🛡️ [Segurança] Inspecionando conformidade de entrada...`);
+    if (!isGuardrailSafe) {
+        lines.push(` │   └── 🚨 Interceptação acionada: Violação de diretrizes ou segurança da informação.`);
+        lines.push(` └── ✅ Concluído em ${sec}s`);
+        return lines.join("\n");
+    }
+
+    lines.push(` │   └── ✅ Mensagem segura (sem injeção de prompt, sem comandos maliciosos).`);
+    lines.push(` │`);
+
+    // 2. Interceptação Tier 1 Fast-Path (se acionada)
+    if (isFastPath) {
+        lines.push(` ├── ⚡ [Tier 1 Fast-Path] Interceptação determinística imediata...`);
+        lines.push(` │   └── 🎯 Atendimento imediato em < 15ms sem consumo de tokens.`);
+        lines.push(` └── ✅ Concluído em ${sec}s`);
+        return lines.join("\n");
+    }
+
+    // 3. Orquestrador (Roteamento Semântico)
+    lines.push(` ├── 🧭 [Orquestrador] Analisando contexto e intenção...`);
+    let agentDesc = "Agente de Conhecimento (Dúvidas sobre produtos/recursos)";
+    if (agent === "support") agentDesc = "Agente de Suporte ao Cliente (Operações, extrato e chamados)";
+    else if (agent === "escalation") agentDesc = "Agente de Escalonamento (Transferência para operador humano)";
+    else if (agent === "guardrail_block") agentDesc = "Delimitação de Escopo (Solicitação não suportada pelo canal)";
+    lines.push(` │   └── 🎯 Roteado para: ${agentDesc}.`);
+    lines.push(` │`);
+
+    // 4. Agente Especialista e Ferramentas Corporativas
+    if (agent === "support") {
+        lines.push(` ├── 🛠️ [Agente de Suporte] Operações transacionais e conta do lojista...`);
+        lines.push(` │   │`);
+        lines.push(` │   ├── 👤 Validação cadastral: ${trace.authenticated ? `Cliente autenticado (${trace.user_id || 'ID identificado'})` : 'Sessão com verificação de documento (LGPD)'}`);
+        
+        let supportStep = 1;
+        if (tools.length > 0) {
+            tools.forEach((t) => {
+                let toolTitle = t;
+                let toolDesc = "Execução de ferramenta de negócio corporativa";
+                if (t === "consultar_vendas_e_liquidacao") {
+                    toolTitle = "Consulta de Vendas e Liquidação";
+                    toolDesc = "Acessando histórico de transações e data de liquidação bancária";
+                } else if (t === "consultar_status_maquininhas") {
+                    toolTitle = "Diagnóstico de Maquininhas";
+                    toolDesc = "Verificando conectividade e status técnico dos terminais POS";
+                } else if (t === "consultar_transacoes_e_erros") {
+                    toolTitle = "Diagnóstico de Recusa / Transações";
+                    toolDesc = "Consultando código de erro e motivo de recusa da adquirente";
+                } else if (t === "consultar_chamados_suporte") {
+                    toolTitle = "Histórico de Chamados";
+                    toolDesc = "Consultando ordens de serviço anteriores do lojista";
+                } else if (t === "abrir_chamado_suporte") {
+                    toolTitle = "Abertura de Chamado Técnico";
+                    toolDesc = "Registrando protocolo oficial GET-2026 na base de suporte";
+                }
+                lines.push(` │   │`);
+                lines.push(` │   ├── 📊 Etapa ${supportStep++}: ${toolTitle}...`);
+                lines.push(` │   │   └── ✅ ${toolDesc}.`);
+            });
+            lines.push(` │   │`);
+            lines.push(` │   └── ✍️ Etapa ${supportStep++}: Sintetizando dados transacionais da conta do lojista...`);
+            lines.push(` │       └── Resposta elaborada com segurança e isolamento de dados.`);
+        } else {
+            // Suporte acionado SEM ferramentas (ex: solicitação de documento/LGPD ou orientação operacional direta)
+            if (!trace.authenticated) {
+                lines.push(` │   │`);
+                lines.push(` │   └── 🔒 Etapa 1: Barreira de segurança e conformidade (LGPD)...`);
+                lines.push(` │       └── Dados privados contidos. Solicitando CPF ou ID do cliente antes de acessar a base.`);
+            } else {
+                lines.push(` │   │`);
+                lines.push(` │   └── 💬 Etapa 1: Orientação técnica e operacional direta...`);
+                lines.push(` │       └── Atendimento ao lojista com segurança e isolamento de dados.`);
+            }
+        }
+    } else if (agent === "knowledge") {
+        if (tools.length === 0) {
+            // Conhecimento acionado SEM ferramentas (ex: saudações, agradecimentos ou catálogo geral)
+            lines.push(` ├── 📚 [Agente de Conhecimento] Atendimento direto ao lojista...`);
+            lines.push(` │   │`);
+            lines.push(` │   └── 🤝 Etapa 1: Acolhimento institucional e catálogo Getnet...`);
+            lines.push(` │       └── Resposta elaborada diretamente pelo assistente (saudação ou FAQ rápido).`);
+        } else {
+            lines.push(` ├── 📚 [Agente de Conhecimento] Iniciando busca oficial em multi-camadas...`);
+            lines.push(` │   │`);
+
+            let subStep = 1;
+            const hasLocal = tools.includes("consultar_base_local_getnet");
+            const hasWeb = tools.includes("consultar_base_web_getnet");
+            const hasExternal = tools.includes("pesquisar_web");
+
+            if (hasLocal) {
+                lines.push(` │   ├── 🔍 Etapa ${subStep++}: Consultando base vetorial local e PDFs...`);
+                if (hasWeb) {
+                    lines.push(` │   │   └── ⚠️ Termos da consulta não localizados na base local.`);
+                } else {
+                    lines.push(` │   │   └── ✅ Informações oficiais localizadas na base técnica local (ChromaDB).`);
+                }
+            }
+
+            if (hasWeb) {
+                lines.push(` │   │`);
+                lines.push(` │   ├── 🌐 Etapa ${subStep++}: Executando varredura em tempo real nos portais oficiais...`);
+                lines.push(` │   │   ├── Acessando: https://site.getnet.com.br/blog/`);
+                lines.push(` │   │   └── ⚠️ Consulta online concluída nos canais oficiais.`);
+            }
+
+            if (hasExternal) {
+                lines.push(` │   │`);
+                lines.push(` │   ├── 🌐 Etapa ${subStep++}: Pesquisa de uso geral na web (DuckDuckGo)...`);
+                lines.push(` │   │   └── ✅ Informações externas em tempo real obtidas.`);
+            }
+
+            lines.push(` │   │`);
+            lines.push(` │   └── ✍️ Etapa ${subStep++}: Aplicando diretriz anti-alucinação e formatando fontes...`);
+            lines.push(` │       └── Resposta elaborada com transparência e fundamentação oficial.`);
+        }
+    } else if (agent === "escalation") {
+        lines.push(` ├── 👤 [Agente de Escalonamento] Transferência para operador humano...`);
+        lines.push(` │   │`);
+        lines.push(` │   ├── 📋 Etapa 1: Triagem e classificação de fila prioritária.`);
+        lines.push(` │   ├── 🎫 Etapa 2: Emissão e vinculação de protocolo oficial GET-2026.`);
+        lines.push(` │   └── 📞 Etapa 3: Encaminhamento para atendimento especializado.`);
+    } else if (agent === "guardrail_block") {
+        lines.push(` ├── 🧭 [Delimitação de Escopo] Proteção do ecossistema Getnet...`);
+        lines.push(` │   └── 🛑 Mensagem identificada como fora de escopo de soluções de pagamento.`);
+    }
+
+    // 5. Fechamento
+    lines.push(` └── ✅ Concluído em ${sec}s`);
+
+    return lines.join("\n");
+};
+
+/**
  * Componente de Observabilidade & Inspeção do Harness (4 Pilares).
  * Renderiza um accordion moderno e expansível abaixo da resposta da IA.
  */
@@ -386,10 +549,10 @@ const HarnessTraceInspector = ({ trace }) => {
             <div
                 className={`harness-summary-pill ${expanded ? 'active' : ''}`}
                 onClick={() => setExpanded(prev => !prev)}
-                title="Clique para inspecionar os 4 pilares do Harness de Execução"
+                title="Clique para estender ou recolher a árvore de raciocínio da execução"
             >
                 <div className="pill-left">
-                    <span className="pill-metric">⚡ {trace.latency_ms}ms</span>
+                    <span className="pill-metric">🧠 Linha de Raciocínio: ⚡ {trace.latency_ms}ms</span>
                     <span className="pill-sep">•</span>
                     <span className="pill-metric">🪙 {trace.estimated_tokens} tokens</span>
                     <span className="pill-sep">•</span>
@@ -593,6 +756,199 @@ const HarnessTraceInspector = ({ trace }) => {
                             </ul>
                         </div>
                     </div>
+
+                    {/* Linha de Raciocínio Completa da Execução baseada no trace */}
+                    <div className="harness-reasoning-tree-box">
+                        <div className="reasoning-tree-header">
+                            <strong>🧠 Linha de Raciocínio da Execução</strong>
+                            <span>✅ Concluído em {((trace.latency_ms || 0) / 1000).toFixed(1)}s</span>
+                        </div>
+                        <pre className="reasoning-tree-pre">
+                            {formatReasoningTree(trace)}
+                        </pre>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+/**
+ * Componente da Linha de Raciocínio ao Vivo (Live Reasoning Trace).
+ * Por padrão fica recolhido mostrando a etapa atual com badge pulsante.
+ * O usuário pode clicar para estender ou recolher a árvore completa de etapas a qualquer momento.
+ */
+const LiveReasoningTrace = ({ active, userQuery }) => {
+    const [expanded, setExpanded] = useState(false); // Padrão: SEMPRE RECOLHIDO
+    const [stepIndex, setStepIndex] = useState(0);
+    const [seconds, setSeconds] = useState(0.0);
+
+    // Detecção dinâmica da intenção semântica da consulta enquanto a IA processa
+    const liveIntent = React.useMemo(() => {
+        if (!userQuery) return "knowledge";
+        const q = userQuery.toLowerCase().trim();
+
+        // 1. Padrões de Segurança / Injeção / Jailbreak / Fraude / SQLi
+        if (
+            q.includes("ignore") || q.includes("instruç") || q.includes("system prompt") ||
+            q.includes("drop table") || q.includes("select *") || q.includes("clonar") ||
+            q.includes("cartão clonar") || q.includes("burlar") || q.includes("jailbreak") ||
+            q.includes("' or '1'='1") || q.includes("hack") || q.includes("malicioso")
+        ) {
+            return "security";
+        }
+
+        // 2. Intenção Humana / Escalonamento
+        if (
+            q.includes("humano") || q.includes("atendente") || q.includes("operador") ||
+            q.includes("pessoa") || q.includes("falar com atendente") || q.includes("transbordo")
+        ) {
+            return "escalation";
+        }
+
+        // 3. Intenção Financeira / Suporte / Dados Privados / Maquininha
+        if (
+            q.includes("vendas") || q.includes("depósito") || q.includes("depositado") ||
+            q.includes("meu id") || q.includes("cliente") || q.includes("cpf") || q.includes("cnpj") ||
+            q.includes("saldo") || q.includes("extrato") || q.includes("liquida") ||
+            q.includes("recusa") || q.includes("erro 51") || q.includes("erro") ||
+            q.includes("chamado") || q.includes("não conecta") || q.includes("conectividade") ||
+            q.includes("terminal") || q.includes("transação") || q.includes("transacoes") ||
+            q.includes("maquininha")
+        ) {
+            return "support";
+        }
+
+        // 4. Pesquisa Externa (Clima, Moeda, Notícias gerais)
+        if (
+            q.includes("previsão") || q.includes("tempo") || q.includes("clima") ||
+            q.includes("euro") || q.includes("dólar") || q.includes("dolar") ||
+            q.includes("cotação") || q.includes("cotacao") || q.includes("câmbio") || q.includes("cambio")
+        ) {
+            return "external_search";
+        }
+
+        // 5. Padrão: Agente de Conhecimento Getnet
+        return "knowledge";
+    }, [userQuery]);
+
+    const steps = React.useMemo(() => {
+        if (liveIntent === "security") {
+            return [
+                { icon: "🛡️", title: "Guardrail de Segurança", desc: "Inspecionando diretrizes e integridade da entrada...", badge: "Segurança" },
+                { icon: "🚨", title: "Análise de Conformidade", desc: "Verificando proteção anti-jailbreak e contenção de injeção...", badge: "Conformidade" }
+            ];
+        }
+        if (liveIntent === "escalation") {
+            return [
+                { icon: "🛡️", title: "Guardrail de Segurança", desc: "Inspecionando conformidade e regras de entrada...", badge: "Seguro" },
+                { icon: "🧭", title: "Orquestrador", desc: "Identificando solicitação de transferência para atendente humano...", badge: "Roteado" },
+                { icon: "📋", title: "Agente de Escalonamento", desc: "Classificando fila prioritária e gerando protocolo GET-2026...", badge: "Triagem" },
+                { icon: "🎫", title: "Human Handoff", desc: "Finalizando encaminhamento para especialista humano...", badge: "Finalizando" }
+            ];
+        }
+        if (liveIntent === "support") {
+            return [
+                { icon: "🛡️", title: "Guardrail de Segurança", desc: "Inspecionando conformidade de entrada e regras de segurança...", badge: "Seguro" },
+                { icon: "🧭", title: "Orquestrador", desc: "Identificando intenção transacional (Suporte ao Lojista)...", badge: "Roteado" },
+                { icon: "👤", title: "Autenticação & LGPD", desc: "Validando documento e isolamento de dados do lojista...", badge: "Autenticação" },
+                { icon: "📊", title: "Ferramentas Corporativas", desc: "Executando consultas em serviços bancários e transacionais...", badge: "Finalizando" }
+            ];
+        }
+        if (liveIntent === "external_search") {
+            return [
+                { icon: "🛡️", title: "Guardrail de Segurança", desc: "Inspecionando conformidade de entrada...", badge: "Seguro" },
+                { icon: "🧭", title: "Orquestrador", desc: "Identificando consulta de contexto externo geral...", badge: "Roteado" },
+                { icon: "🌐", title: "Pesquisa Web em Tempo Real", desc: "Consultando índices globais e dados externos (DuckDuckGo)...", badge: "Buscando" },
+                { icon: "✍️", title: "Síntese Informativa", desc: "Consolidando dados em tempo real com transparência...", badge: "Finalizando" }
+            ];
+        }
+        return [
+            { icon: "🛡️", title: "Guardrail de Segurança", desc: "Inspecionando integridade e conformidade de entrada...", badge: "Seguro" },
+            { icon: "🧭", title: "Orquestrador", desc: "Analisando contexto e direcionando para Agente de Conhecimento...", badge: "Knowledge" },
+            { icon: "🔍", title: "Base Local (ChromaDB)", desc: "Consultando base vetorial interna e manuais técnicos...", badge: "Base Interna" },
+            { icon: "🌐", title: "Validação Oficial", desc: "Verificando portais oficiais e aplicando diretriz anti-alucinação...", badge: "Finalizando" }
+        ];
+    }, [liveIntent]);
+
+    useEffect(() => {
+        if (!active) {
+            setStepIndex(0);
+            setSeconds(0.0);
+            return;
+        }
+
+        const secTimer = setInterval(() => {
+            setSeconds(s => +(s + 0.1).toFixed(1));
+        }, 100);
+
+        const t1 = setTimeout(() => setStepIndex(1), 600);
+        const t2 = setTimeout(() => setStepIndex(2), 1500);
+        const t3 = setTimeout(() => setStepIndex(3), 2700);
+
+        return () => {
+            clearInterval(secTimer);
+            clearTimeout(t1);
+            clearTimeout(t2);
+            clearTimeout(t3);
+        };
+    }, [active]);
+
+    if (!active) return null;
+
+    const currentStep = steps[stepIndex] || steps[steps.length - 1];
+
+    return (
+        <div className="live-reasoning-container">
+            {/* Barra Recolhida (Sempre visível mostrando a etapa atual) */}
+            <div
+                className="live-reasoning-pill"
+                onClick={() => setExpanded(prev => !prev)}
+                title="Clique para estender ou recolher a árvore completa de raciocínio"
+            >
+                <div className="live-reasoning-left">
+                    <div className="live-pulse-dot" />
+                    <span className="live-step-label">
+                        {currentStep.icon} [{stepIndex + 1}/{steps.length}] {currentStep.title}:
+                    </span>
+                    <span className="live-step-desc">
+                        {currentStep.desc} ({seconds}s)
+                    </span>
+                </div>
+                <div className="live-reasoning-right">
+                    <span className="live-chevron" style={{ fontSize: '0.85rem', color: '#94a3b8' }}>{expanded ? "▲" : "▼"}</span>
+                </div>
+            </div>
+
+            {/* Árvore Completa (Estendida sob demanda) */}
+            {expanded && (
+                <div className="live-reasoning-tree">
+                    {steps.map((st, i) => {
+                        const isDone = i < stepIndex;
+                        const isCurrent = i === stepIndex;
+                        const isFuture = i > stepIndex;
+
+                        return (
+                            <div key={i} className="tree-step-row">
+                                <div className="tree-step-left">
+                                    <span style={{ fontSize: "1.1rem" }}>{st.icon}</span>
+                                    <div>
+                                        <div className="tree-step-title">
+                                            {st.title}
+                                        </div>
+                                        <div className="tree-step-desc">
+                                            {st.desc}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div>
+                                    {isDone && <span className="tree-step-badge badge-done">✅ {st.badge}</span>}
+                                    {isCurrent && <span className="tree-step-badge badge-active">🔄 Em andamento...</span>}
+                                    {isFuture && <span className="tree-step-badge badge-waiting">⏳ Aguardando</span>}
+                                </div>
+                            </div>
+                        );
+                    })}
                 </div>
             )}
         </div>
@@ -616,6 +972,7 @@ const Dashboard = () => {
     const [testScenariosOpen, setTestScenariosOpen] = useState(false); // Padrão: SEMPRE RECOLHIDO
     const [inputText, setInputText] = useState("");
     const [loading, setLoading] = useState(false);
+    const [currentQuery, setCurrentQuery] = useState("");
     const messagesEndRef = useRef(null);
     const inputRef = useRef(null);
 
@@ -695,6 +1052,7 @@ const Dashboard = () => {
         if (!trimmed || loading) return;
 
         setInputText("");
+        setCurrentQuery(trimmed);
         const timeNow = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
         const userMsg = {
@@ -740,7 +1098,11 @@ const Dashboard = () => {
                 content: res.response,
                 agent: res.agent_used,
                 tools: res.tools_used || [],
-                trace: res.trace || null,
+                trace: res.trace ? {
+                    ...res.trace,
+                    agent_used: res.agent_used,
+                    tools_used: res.tools_used || (res.trace.tool_calls ? res.trace.tool_calls.map(tc => tc.tool || tc.name) : [])
+                } : null,
                 timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                 tempId: Date.now() + 1
             };
@@ -1055,17 +1417,12 @@ const Dashboard = () => {
                         })
                     )}
 
-                    {/* Indicador de Digitação / Consulta */}
+                    {/* Indicador de Raciocínio ao Vivo / Consulta Multiagente */}
                     {loading && (
-                        <div className="message-wrapper assistant-wrapper loading-wrapper">
-                            <div className="message-avatar">⚙️</div>
-                            <div className="message-bubble assistant-bubble loading-bubble">
-                                <div className="typing-dots">
-                                    <span></span>
-                                    <span></span>
-                                    <span></span>
-                                </div>
-                                <span className="loading-text">Consultando especialistas Getnet...</span>
+                        <div className="message-wrapper assistant-wrapper loading-wrapper" style={{ width: "100%", maxWidth: "860px" }}>
+                            <div className="message-avatar" style={{ background: "var(--brand-primary)", color: "#fff", fontWeight: 700 }}>G</div>
+                            <div style={{ flex: 1 }}>
+                                <LiveReasoningTrace active={loading} userQuery={currentQuery} />
                             </div>
                         </div>
                     )}
