@@ -38,6 +38,28 @@ def consultar_base_local_getnet(query: str, num_resultados: int = 4) -> str:
         if not docs:
             return "Nenhuma informação oficial encontrada na base Getnet para esta consulta."
 
+        STOPWORDS = {
+            "como", "para", "qual", "quais", "onde", "quando", "quem", "porque", "por",
+            "com", "sem", "uma", "uns", "umas", "mais", "menos", "muito", "pouco",
+            "seu", "sua", "seus", "suas", "meu", "minha", "nosso", "nossa", "dele", "dela",
+            "nas", "nos", "das", "dos", "pela", "pelo", "pelas", "pelos", "sobre", "entre",
+            "está", "estao", "estão", "esta", "estas", "este", "estes", "esse", "esses",
+            "essa", "essas", "isso", "aquilo", "aquele", "aquela", "aqui", "ali", "la", "lá",
+            "funciona", "funcionar", "saber", "quero", "gostaria", "pode", "podem", "getnet"
+        }
+        all_words = re.findall(r"\w{3,}", query.lower())
+        sig_words = [w for w in all_words if w not in STOPWORDS]
+        if sig_words:
+            matched_any = any(
+                any(w in doc.page_content.lower() or w in str(doc.metadata).lower() for w in sig_words)
+                for doc in docs
+            )
+            if not matched_any:
+                return (
+                    f"Nenhuma informação oficial sobre os termos específicos da consulta ('{query}') "
+                    f"foi localizada na base técnica local da Getnet. Favor consultar os portais web oficiais via 'consultar_base_web_getnet'."
+                )
+
         trechos = []
         for i, doc in enumerate(docs, 1):
             raw_source = doc.metadata.get("source", "Base Oficial Getnet")
