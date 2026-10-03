@@ -21,7 +21,7 @@ services:
       - CONFIG_DB_PATH=/app/bds/config.db
       - RAG_SYNC_DB_PATH=/app/bds/rag_sync.sqlite
       - RAG_SYNC_MODE=${RAG_SYNC_MODE:-simple}
-      - RAG_ASYNC_URLS=${RAG_ASYNC_URLS:-https://www.getnet.eu/pt/suporte, https://site.getnet.com.br/get-ajuda/}
+      - RAG_ASYNC_URLS=${RAG_ASYNC_URLS:-https://site.getnet.com.br/get-ajuda/, https://www.getnet.eu/pt/suporte}
       - RAG_SYNC_URLS=${RAG_SYNC_URLS:-https://site.getnet.com.br/blog/}
       - RAG_CRAWLER_MAX_DEPTH=${RAG_CRAWLER_MAX_DEPTH:-2}
       - RAG_CRAWLER_MAX_PAGES=${RAG_CRAWLER_MAX_PAGES:-100}
@@ -36,11 +36,11 @@ services:
       - ./frontend:/app/frontend
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8001/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
+      start_period: 15s
 
   frontend:
     image: python:3.11-slim
