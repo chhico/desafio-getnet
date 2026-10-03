@@ -187,6 +187,8 @@ class ConversationService:
             human_messages_count=human_messages_count,
             ai_messages_count=ai_messages_count,
             tool_messages_count=tool_messages_count,
+            agent_used=agent_used,
+            tools_used=tools_used,
             state_snapshot=state_snapshot,
         )
 

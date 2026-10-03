@@ -25,6 +25,8 @@ class HarnessTrace(BaseModel):
     human_messages_count: int = Field(1, description="Quantidade de mensagens enviadas pelo usuário")
     ai_messages_count: int = Field(1, description="Quantidade de mensagens/sínteses geradas pela IA")
     tool_messages_count: int = Field(0, description="Quantidade de retornos intermediários de ferramentas")
+    agent_used: Optional[str] = Field(None, description="Agente especialista responsável pela execução")
+    tools_used: list[str] = Field(default_factory=list, description="Lista de nomes das ferramentas corporativas executadas")
     state_snapshot: dict[str, Any] = Field(default_factory=dict, description="Snapshot das variáveis ativas persistidas no StateGraph")
 
 class ChatResponse(BaseModel):
