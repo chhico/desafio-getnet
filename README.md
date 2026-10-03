@@ -6,7 +6,7 @@ Sistema multiagente corporativo de alta performance construído com **LangGraph*
 
 ## 🏛️ Arquitetura e Orquestração Multiagente
 
-O sistema adota um padrão de orquestração avançado com **Guardrails de Segurança**, **Roteador Semântico com Ancoragem Temporal Dinâmica** e **3 Agentes Especialistas Cooperativos**, além de retenção de memória conversacional multi-turnos com `MemorySaver`:
+O sistema adota um padrão de orquestração avançado com **Guardrails de Segurança**, **Roteador Semântico com Ancoragem Temporal Dinâmica**, **Tier 1 Fast-Path**, **3 Agentes Especialistas Cooperativos**, retenção de memória conversacional multi-turnos com `MemorySaver` e um módulo de inspeção técnica baseado no **Agent Harness (4 Pilares)**:
 
 ```mermaid
 flowchart TD
@@ -15,19 +15,22 @@ flowchart TD
     Service --> Graph[LangGraph StateGraph<br/>backend/agents/graph.py]
     
     Graph --> Guardrail[Guardrails de Segurança<br/>guardrail_node]
-    Guardrail -->|Violação / Prompt Injection| Block[Resposta de Bloqueio Seguro]
-    Block --> END([Fim da Sessão])
+    Guardrail -->|Violação / Prompt Injection / SQLi| Block[Resposta de Bloqueio Seguro]
+    Block --> END([Fim da Execução])
     
     Guardrail -->|Aprovado / Entrada Segura| Router[Agente 1: Roteador Inteligente<br/>orchestrator_node]
+    
+    Router -->|Tier 1 Fast-Path: Saudações / FAQ| FastPath[Fast-Path Determinístico<br/>Resposta em < 15ms sem LLM]
+    FastPath --> Knowledge
     
     Router -->|Dúvidas de catálogo, taxas, Pix,<br/>regras e busca web externa| Knowledge[Agente 2: Conhecimento<br/>knowledge_node]
     Router -->|Extratos, vendas, status de POS,<br/>erros de recusa e chamados técnicos| Support[Agente 3: Suporte ao Cliente<br/>support_node]
     Router -->|Transferência para atendente humano,<br/>insistência, casos críticos e ouvidoria| Escalation[Agente 4: Escalonamento Humano<br/>escalation_node]
     
     subgraph Ferramentas Knowledge
-        Knowledge --> RAGLocal[ChromaDB Local]
-        Knowledge --> RAGWeb[Varredura Web Portais Getnet]
-        Knowledge --> WebSearch[DuckDuckGo Search]
+        Knowledge --> RAGLocal[consultar_base_local_getnet<br/>ChromaDB Local]
+        Knowledge --> RAGWeb[consultar_base_web_getnet<br/>Varredura Web Portais Getnet]
+        Knowledge --> WebSearch[pesquisar_web<br/>DuckDuckGo Search]
     end
     
     subgraph Ferramentas Support
@@ -45,26 +48,26 @@ flowchart TD
     Knowledge --> Response([Resposta Unificada ao Cliente])
     Support --> Response
     Escalation --> Response
-    Response --> Telemetry[Telemetria & Observabilidade<br/>telemetry_collector]
+    Response --> Telemetry[Telemetria & Observabilidade Harness<br/>telemetry_collector]
     Telemetry --> END
 ```
 
 ---
 
-## 🤖 Os 4 Agentes Especialistas & Camada de Guardrails
+## 🤖 Os Especialistas do Grafo & Camada de Guardrails
 
-### 🛡️ Camada de Guardrails de Segurança (`guardrail_node`)
-- **Papel:** Primeira barreira de defesa de entrada do sistema.
-- **Mecanismo:** Analisa a mensagem do usuário contra tentativas de *prompt injection*, *jailbreaks*, extração de instruções internas do sistema (*system prompt leak*), toxicidade e termos abusivos.
-- **Comportamento:** Se for detectada violação, encerra o grafo deterministicamente com mensagem institucional segura, sem consumir tokens adicionais nem expor os especialistas.
+### 🛡️ 1. Camada de Guardrails de Segurança (`guardrail_node`)
+- **Papel:** Primeira barreira de defesa determinística de entrada do sistema.
+- **Mecanismo:** Analisa a mensagem do usuário contra tentativas de *prompt injection*, *jailbreaks*, injeções de código/SQL, vazamento de instruções internas (*system prompt leak*), toxicidade e fraudes.
+- **Comportamento:** Ao interceptar uma ameaça, encerra o grafo imediatamente (`guardrail_node ➔ END`), sem acionar o Orquestrador nem os especialistas, com latência de 0.0s e zero consumo de tokens desnecessários.
 
-### 🧭 Agente 1 — Agente Roteador (`orchestrator_node`)
+### 🧭 2. Agente Roteador (`orchestrator_node`)
 - **Papel:** Ponto de entrada da orquestração inteligente e orquestrador de turnos.
 - **Mecanismo:** Analisa a semântica da solicitação, o histórico multi-turnos e o identificador do cliente (`user_id`) para decidir deterministicamente qual especialista deve atender o turno (`knowledge`, `support` ou `escalation`), **sem gerar respostas conversacionais diretas nem chamar ferramentas**, garantindo separação estrita de responsabilidades.
-- **Ancoragem Temporal Dinâmica e Agnóstica:** Integra dinamicamente a função `get_system_clock_context()`, injetando dia da semana, data atual e ano do sistema em tempo real. Permite que consultas relativas ("vendas de ontem", "previsão do tempo para amanhã", "fechamento recente") sejam roteadas de forma precisa e sem nenhuma data fixa (*hardcoded*).
-- **Inteligência de Escalonamento:** Caso o usuário mencione apenas *"quero falar com humano"*, orienta o cliente a informar o assunto para que o sistema possa ajudá-lo ou direcioná-lo ao especialista certo; caso o cliente insista, confirme a necessidade ou relate problemas críticos, aciona imediatamente o Agente de Escalonamento.
+- **Tier 1 Fast-Path:** Intercepta saudações frequentes, agradecimentos e confirmações simples via regex compiladas, retornando acolhimento padronizado em menos de 15ms.
+- **Ancoragem Temporal Dinâmica:** Integra a função `get_system_clock_context()`, injetando dia da semana, data atual e ano do sistema em tempo real, permitindo que consultas relativas ("vendas de ontem", "previsão do tempo para amanhã", "fechamento recente") sejam roteadas com precisão sem datas fixas no código.
 
-### 🧠 Agente 2 — Agente de Conhecimento (`knowledge_node`)
+### 📚 3. Agente de Conhecimento (`knowledge_node`)
 - **Papel:** Responde dúvidas institucionais, catálogo de maquininhas, taxas, crediário, Pix, antecipação e perguntas gerais de mundo aberto com arquitetura *Cache-First e Live Web Fallback*.
 - **Citação Obrigatória de Fontes:** Toda resposta fundamentada em documentação oficial cita explicitamente arquivos ou URLs consultadas no rodapé.
 - **Ferramentas (`KNOWLEDGE_TOOLS`):**
@@ -72,17 +75,17 @@ flowchart TD
   2. `consultar_base_web_getnet`: Varredura em tempo real nas páginas e subpáginas dos portais oficiais Getnet (`RAG_SYNC_URLS`) quando a base interna local necessitar de atualização complementar.
   3. `pesquisar_web`: Busca na internet (DuckDuckGo) para cotações de moedas (ex: euro hoje), clima em tempo real e informações gerais fora do catálogo Getnet.
 
-### 🎧 Agente 3 — Agente de Suporte ao Cliente (`support_node`)
+### 🛠️ 4. Agente de Suporte ao Cliente (`support_node`)
 - **Papel:** Atendimento autenticado e personalizado utilizando o identificador do cliente (`user_id`).
-- **Autenticação Obrigatória:** Exige validação de documento (CPF/ID) antes de expor extratos ou dados privados.
-- **Ferramentas (`SUPPORT_TOOLS`):**
-  1. `consultar_vendas_e_liquidacao`: Consulta vendas de ontem, liquidação em conta corrente cadastrada e prazos contratuais D+2.
-  2. `consultar_status_maquininhas`: Diagnóstico de conectividade, intensidade de sinal (4G/Wi-Fi) e estado dos terminais (Get Clássica, Get Smart, Get Mini, POS Digital).
+- **Autenticação e LGPD Obrigatórias:** Exige validação de documento (CPF/ID) antes de expor extratos ou dados privados. Caso a mensagem não contenha identificação, bloqueia preventivamente o acesso a dados privados e solicita o documento.
+- **Ferramentas Corporativas (`SUPPORT_TOOLS`):**
+  1. `consultar_vendas_e_liquidacao`: Consulta vendas realizadas, liquidação bancária em conta cadastrada e prazos contratuais D+2.
+  2. `consultar_status_maquininhas`: Diagnóstico de conectividade, intensidade de sinal (4G/Wi-Fi) e estado operacional dos terminais POS (Get Clássica, Get Smart, Get Mini, POS Digital).
   3. `consultar_transacoes_e_erros`: Diagnóstico detalhado de recusas de pagamento com código e orientação ao lojista (ex: Código 51 - Saldo Insuficiente).
   4. `consultar_chamados_suporte`: Histórico completo de chamados e solicitações abertas pelo lojista.
-  5. `abrir_chamado_suporte`: Abertura formal de ticket técnico com número de protocolo Getnet, motivo e prazo para reposição de bobinas térmicas, troca de leitor ou manutenção física.
+  5. `abrir_chamado_suporte`: Abertura formal de ticket técnico com número de protocolo oficial Getnet, motivo e prazo para reposição de bobinas térmicas, troca de leitor ou manutenção física.
 
-### 🤝 Agente 4 — Agente de Escalonamento Humano (`escalation_node`)
+### 👤 5. Agente de Escalonamento Humano (`escalation_node`)
 - **Papel:** Transferência assistida e contextualizada para operadores humanos (**Human Handoff em tempo real**).
 - **Mecanismo:**
   - Gera protocolo oficial de atendimento Getnet (`GET-2026-XXXX`).
@@ -100,46 +103,72 @@ flowchart TD
 
 ---
 
-## 🔄 Pipeline de RAG e Ingestão Híbrida
+## 🔬 Observabilidade Técnica: Os 4 Pilares do Agent Harness
+
+Abaixo de cada resposta da IA na interface visual, há um componente expansível de observabilidade e auditoria técnica que expõe os **4 Pilares do Harness**:
+
+```
++-----------------------------------------------------------------------------------------+
+|  🧠 Linha de Raciocínio: ⚡ 220ms  •  🪙 412 tokens  •  🧭 guardrail ➔ orchestrator  ▲  |
++-----------------------------------------------------------------------------------------+
+```
+
+Ao expandir o painel, são apresentados os 4 pilares em cards dedicados:
+
+1. **Pilar 1 — Trajetória no Grafo & Tool Calls:**
+   - Chips visuais coloridos exibindo a sequência real de nós executados pelo LangGraph (`guardrail ➔ orchestrator ➔ support`).
+   - Relação das ferramentas corporativas acionadas no turno com nome da tool e parâmetros recebidos (`args`).
+2. **Pilar 2 — Isolamento & Estado Persistido no StateGraph:**
+   - Contagem de turnos ativos no chat versus mensagens acumuladas no buffer do ReAct.
+   - Chips discriminando perguntas humanas, respostas geradas pela IA e passos intermediários de ferramentas.
+   - Snapshot 100% real das variáveis ativas salvas na memória (`categoria_ativa`, `cliente_autenticado`, `protocolo_chamado`, `fila_atendimento`).
+3. **Pilar 3 — Contenção de Mutações (Sandbox Enforcement):**
+   - Distinção explícita entre operações de **Leitura Pura** (consultas a extratos e status) e **Mutações Executadas** (inserção de chamados na base SQLite local).
+   - Confirmação de conformidade estrita com LGPD e PCI-DSS em ambiente Sandbox.
+4. **Pilar 4 — Governança, Custos & Guardrails:**
+   - Auditoria de segurança na entrada (`✅ Seguro` vs `🚨 Interceptação Ativada`).
+   - Latência total de execução em milissegundos.
+   - Consumo de tokens (Prompt + Completion) e custo financeiro estimado em dólares (USD).
+
+---
+
+## 🧠 Linha de Raciocínio Dinâmica (Live Reasoning & Execution Tree)
+
+O sistema conta com dois níveis de transparência do raciocínio da IA:
+
+### 1. Indicador em Tempo Real (`LiveReasoningTrace`)
+Durante o processamento da requisição, a barra de progresso identifica em tempo real a intenção da mensagem e exibe etapas contextuais correspondentes:
+- **Testes de Injeção / Segurança:** Exibe inspeção de conformidade e integridade do Guardrail.
+- **Demandas Financeiras / Suporte:** Exibe validação cadastral (LGPD) e consulta a serviços transacionais.
+- **Pedidos de Atendente:** Exibe triagem de fila prioritária e preparação de protocolo oficial.
+- **Perguntas Externas (Câmbio / Tempo):** Exibe busca web em tempo real via DuckDuckGo.
+- **Dúvidas de Produtos Getnet:** Exibe busca em manuais técnicos e documentação oficial.
+
+### 2. Árvore de Raciocínio Final (`formatReasoningTree`)
+Assim que a resposta retorna, a árvore hierárquica reflete com exatidão matemática o que o grafo executou:
+- Se foi bloqueado pelo Guardrail, **encerra imediatamente no nó de Segurança**, sem exibir falsamente nós posteriores.
+- Se acionou o Agente de Suporte, detalha as ferramentas executadas (`consultar_vendas_e_liquidacao`, `consultar_status_maquininhas`) e a síntese transacional.
+- Se acionou o Agente de Conhecimento, exibe a numeração estritamente sequencial das etapas (Base Local ➔ Crawler Web ➔ Síntese Anti-Alucinação).
+- Se acionou acolhimento direto sem ferramentas (ex: *"Boa noite"*), declara com transparência que se tratou de acolhimento institucional direto sem consulta vetorial.
+
+---
+
+## 🔄 Pipeline de RAG Híbrido e Ingestão Inteligente
 
 O sistema conta com uma infraestrutura de RAG de alta disponibilidade e custo computacional otimizado:
 
 1. **Ingestão de Arquivos Locais (`fonte_de_dados/`):**
    - Suporte a múltiplos formatos: `.pdf`, `.docx`, `.txt`, `.md`, `.csv`, `.json`, `.log`.
    - **Deduplicação com Hash MD5:** Tabela SQLite `simple_sync_hashes` armazena a assinatura criptográfica de cada arquivo. Arquivos inalterados são ignorados instantaneamente na inicialização, economizando chamadas de embedding. Se alterados, os chunks obsoletos são expurgados do ChromaDB e substituídos pelos novos.
-
 2. **Crawler Recursivo de URLs Parametrizadas:**
    - Varredura assíncrona das URLs raiz configuradas no `.env` (`RAG_ASYNC_URLS`) com profundidade configurável (`RAG_CRAWLER_MAX_DEPTH`) e limite de páginas (`RAG_CRAWLER_MAX_PAGES`).
    - Normalização e limpeza de HTML via `BeautifulSoup`.
-   - Tabela SQLite `url_sync_hashes` garante que páginas da web inalteradas não gerem custos adicionais. Se o conteúdo for modificado na web, o sistema invalida a versão anterior no ChromaDB (`vectorstore.delete(where={"source": url})`) e re-indexa.
-
+   - Tabela SQLite `url_sync_hashes` garante que páginas da web inalteradas não gerem custos adicionais. Se o conteúdo for modificado na web, o sistema invalida a versão anterior no ChromaDB e re-indexa.
 3. **Sincronização em Background no Startup (`lifespan`):**
    - Ao iniciar a aplicação FastAPI, a rotina `run_startup_enrichment()` é disparada assincronamente em segundo plano com controle de concorrência (`threading.Lock`), permitindo que a API fique disponível para requisições imediatamente.
-
 4. **Endpoints Administrativos de Gestão da Base RAG:**
    - `POST /api/v1/admin/upload-files-rag`: Upload direto de novos documentos via API/Swagger com streaming e validação de tamanho (até 50MB).
    - `POST /api/v1/admin/sync-web`: Disparo manual sob demanda com controle de escopo (`target: all | files | urls`) e modo forçado (`force: true | false`).
-
----
-
-## 📊 Observabilidade e Telemetria em Tempo Real
-
-O sistema incorpora um módulo de telemetria em tempo real ([telemetry.py](file:///c:/Estudo%20IA/desafio-get/backend/infrastructure/telemetry.py)) integrado ao pipeline do [ConversationService](file:///c:/Estudo%20IA/desafio-get/backend/services/conversation_service.py):
-- **Coleta de Métricas Operacionais:** Registra latência de resposta em milissegundos, taxa de bloqueio por guardrails, distribuição de uso por agente especialista e classificação por categorias.
-- **Endpoint de Estatísticas:** `GET /api/v1/admin/dashboard-stats` fornece métricas consolidadas (tempo médio de resposta, volume de chamadas, acurácia e KPIs de autoatendimento vs transbordo) para exibição direta no Dashboard do Frontend.
-
----
-
-## 🧹 Arquitetura Limpa e Boas Práticas (Clean Code & SDD)
-
-O projeto foi refatorado seguindo rigorosamente os princípios de **Clean Code**, **Separation of Concerns** e **Single Responsibility**:
-- **Composition Root em `backend/main.py`:** Centraliza a inicialização da aplicação, middlewares (CORS), manipuladores globais de exceção e registro dos roteadores.
-- **Modularidade de Rotas com `APIRouter`:**
-  - `backend/api/conversations.py`: Rota do canal conversacional com o cliente (`/chat`).
-  - `backend/api/admin.py`: Rotas de administração de base de dados, upload de arquivos, crawler e dashboard.
-- **Princípio DRY (*Don't Repeat Yourself*):**
-  - O serviço `ConversationService` encapsula a lógica de execução do grafo, formatação de sessão e telemetria, sendo reutilizado tanto pela API FastAPI quanto pelo terminal interativo `backend/cli.py`.
-- **Eliminação de Código Morto (YAGNI):** Remoção de interfaces não utilizadas e scripts obsoletos, mantendo a árvore de arquivos limpa, coesa e com dependências claras.
 
 ---
 
@@ -151,14 +180,14 @@ O frontend foi desenvolvido com foco em alta produtividade, estética limpa e **
   - Gerenciamento completo de sessões no estado da aplicação (`React State`), cada qual com seu `thread_id` isolado para manter memórias e contextos independentes.
   - Títulos de sessão auto-gerados com base na primeira mensagem do usuário.
   - Exclusão individual de conversas (ícone de lixeira `🗑️`) e botão global *"Limpar Todas as Conversas"* com alerta de confirmação.
+- **Painel de Casos de Teste Oficiais do Edital (15 Cenários Ancorados):**
+  - Acordeão retrátil na barra lateral contendo os 15 casos de teste oficiais do edital, prontos para execução em 1 clique (Prompt Injection, Depósito de Vendas com ID, Cotação do Euro, Falha de Conexão POS, etc.).
 - **Micro-Parser de Markdown Nativo:**
   - Renderiza **negrito**, *itálico*, `código inline`, citações (`> blockquote`), listas com marcadores, cabeçalhos hierárquicos e o bloco destacado de *"📌 Fontes consultadas"* sem vulnerabilidades XSS.
-- **Empty State & Cards de Sugestões de Acesso Rápido:**
-  - 4 cards inteligentes para início instantâneo de conversa (*Taxas e Maquininhas*, *Vendas e Extrato*, *Suporte Técnico POS*, *Atendente Humano*).
 - **Badges Semânticos dos Agentes:**
-  - Identificação visual imediata de qual agente especialista respondeu cada turno (`Conhecimento`, `Suporte Técnico`, `Escalonamento Humano`, `Segurança & Políticas`), além de pílulas indicando as ferramentas corporativas acionadas.
-- **Dashboard Integrado:**
-  - Aba de visualização de métricas e status em tempo real com dados da telemetria da API.
+  - Identificação visual imediata de qual agente especialista respondeu cada turno (`Conhecimento`, `Suporte ao Cliente`, `Escalonamento Humano`, `Segurança & Políticas`), além de pílulas indicando as ferramentas corporativas acionadas.
+- **Dashboard Integrado de Telemetria:**
+  - Visualização de métricas e status em tempo real com dados da telemetria da API (`/dashboard/`).
 
 ---
 
@@ -179,7 +208,9 @@ Com apenas um comando, o Docker Compose compila e inicializa tanto a **API Backe
    docker compose up --build
    ```
 4. Acesse os serviços no navegador:
-   - **Interface Web (Frontend):** [http://localhost:3001](http://localhost:3001)
+   - **Interface Web do Chat (Frontend Dedicado):** [http://localhost:3001](http://localhost:3001)
+   - **Interface Web Integrada na API:** [http://localhost:8001/chat/](http://localhost:8001/chat/)
+   - **Dashboard de Telemetria & Observabilidade:** [http://localhost:8001/dashboard/](http://localhost:8001/dashboard/)
    - **Swagger UI (Documentação Interativa):** [http://localhost:8001/docs](http://localhost:8001/docs)
    - **Health Check da API:** [http://localhost:8001/health](http://localhost:8001/health)
 
@@ -214,7 +245,7 @@ Com apenas um comando, o Docker Compose compila e inicializa tanto a **API Backe
    ```bash
    python -m http.server 3001 --directory frontend
    ```
-   Acesse a interface em: [http://localhost:3001](http://localhost:3001)
+   Acesse a interface em: [http://localhost:3001](http://localhost:3001) ou [http://localhost:8001/chat/](http://localhost:8001/chat/)
 
 ---
 
@@ -227,21 +258,24 @@ python backend/cli.py
 
 ---
 
-## 🧪 Bateria de Testes Automatizados (> 160 Testes)
+## 🧪 Bateria de Testes Automatizados (Arquitetura Sequencial de 4 Camadas)
 
-O sistema possui uma suíte de testes de nível industrial com `pytest`, cobrindo desde a especificação oficial até testes de estresse, segurança e diálogos multi-turnos:
+O sistema possui uma suíte de testes de nível industrial com `pytest`, organizada em uma **Arquitetura Sequencial de 4 Camadas**:
 
 ```bash
-# Executa os 10 cenários oficiais da especificação Getnet + Testes de Roteamento Rápido
-pytest -v tests/test_scenarios.py tests/test_fast_path.py
+# Camada 1: Cenários Oficiais e Bônus do Edital (27 casos)
+pytest tests/test_01_edital_scenarios.py -v
 
-# Executa os 50 testes de robustez multi-turnos (3 a 5 turnos com MemorySaver)
-pytest tests/test_robustness_multiturn_50.py -v
+# Camada 2: Especialistas do Grafo (17 casos)
+pytest tests/test_02_agents.py -v
 
-# Executa os 50 testes de robustez turno único
-pytest tests/test_robustness_50.py -v
+# Camada 3: Ferramentas Internas e Crawler (61 casos)
+pytest tests/test_03_tools_and_internal.py -v
 
-# Executa a bateria completa
+# Camada 4: Robustez Conversacional Profunda Multi-turnos (50 casos)
+pytest tests/test_04_multiturn_harness.py -v
+
+# Bateria Completa (> 155 testes)
 pytest -v
 ```
 
@@ -268,12 +302,12 @@ pytest -v
 
 ### `POST /api/v1/chat`
 
-Endpoint principal de conversação compatível com turnos individuais ou conversas contínuas via `thread_id`:
+Endpoint principal de conversação validado estritamente pelos schemas Pydantic `ChatRequest` e `ChatResponse`:
 
 **Exemplo de Requisição (JSON):**
 ```json
 {
-  "message": "Quando o dinheiro das vendas de ontem será depositado?",
+  "message": "Quando o dinheiro das vendas de ontem será depositado? Meu ID é: cliente1988",
   "user_id": "cliente1988",
   "thread_id": "sessao_abc123"
 }
@@ -287,7 +321,35 @@ Endpoint principal de conversação compatível com turnos individuais ou conver
   "category": "Financeiro/Extrato",
   "tools_used": [
     "consultar_vendas_e_liquidacao"
-  ]
+  ],
+  "trace": {
+    "turn_count": 1,
+    "thread_id": "web_sessao_abc123",
+    "user_id": "cliente1988",
+    "execution_mode": "SANDBOX_SQLITE_LOCAL",
+    "side_effects_prevented": true,
+    "mutation_performed": false,
+    "authenticated": true,
+    "nodes_visited": [
+      "guardrail_node",
+      "orchestrator_node",
+      "support_node"
+    ],
+    "tool_calls": [
+      {
+        "tool": "consultar_vendas_e_liquidacao",
+        "args": { "user_id": "cliente1988" }
+      }
+    ],
+    "latency_ms": 284.5,
+    "estimated_tokens": 420,
+    "estimated_cost_usd": 0.000125,
+    "guardrail_safe": true,
+    "agent_used": "support",
+    "tools_used": [
+      "consultar_vendas_e_liquidacao"
+    ]
+  }
 }
 ```
 
@@ -296,30 +358,3 @@ Endpoint principal de conversação compatível com turnos individuais ou conver
 - `POST /api/v1/admin/sync-web?target=all&force=false`: Disparo de sincronização e vetorização da base RAG.
 - `GET /api/v1/admin/dashboard-stats`: Métricas de latência, taxa de acerto e telemetria operacional.
 - `GET /health`: Verificação de status e versão da aplicação.
-
----
-
-## 📹 Roteiro Sugerido para o Vídeo de Apresentação (5 a 7 minutos)
-
-Para a gravação do seu vídeo aos avaliadores técnicos, utilize este roteiro direto:
-
-1. **Abertura e Visão Geral (45 seg):**
-   - Apresente-se e contextualize a solução: Sistema Multiagente Corporativo para a Getnet com orquestração via LangGraph e FastAPI.
-   - Destaque o diferencial de contar com 4 agentes cooperativos (Roteador, Conhecimento, Suporte ao Cliente e Escalonamento Humano) + Camada de Guardrails.
-2. **Arquitetura e Fluxo do Grafo (1.5 min):**
-   - Exiba o diagrama Mermaid no `README.md` ou LangGraph Studio.
-   - Explique o papel do nó `guardrail` (segurança preventiva), `orchestrator` (roteador semântico determinístico com relógio dinâmico), `knowledge` (RAG local + crawler web Getnet + DuckDuckGo), `support` (autenticação por `user_id` e ferramentas corporativas) e `escalation` (Human Handoff assistido com protocolo `GET-2026-XXXX`).
-3. **Pipeline de RAG Híbrido e Sincronização Inteligente (1.5 min):**
-   - Mostre a pasta `fonte_de_dados/` e as tabelas SQLite de deduplicação por hash MD5 (`simple_sync_hashes` e `url_sync_hashes`).
-   - Explique como arquivos e URLs inalterados são pulados, e como o crawler substitui chunks antigos no ChromaDB quando há alteração.
-   - Demonstre a rota administrativa no Swagger (`/api/v1/admin/upload-files-rag` e `/sync-web`).
-4. **Demonstração Prática na Interface Web (2 min):**
-   - Abra a interface visual em `http://localhost:3001`.
-   - Mostre o gerenciamento de sessões na barra lateral retrátil (criar nova conversa, alternar sessões, excluir individual e limpar todas).
-   - Teste 1: Clique na sugestão *"Taxas e Maquininhas"* e observe a resposta com Markdown e badge *"Conhecimento"*.
-   - Teste 2: Pergunte sobre o extrato do `cliente1988` e veja a ativação do badge *"Suporte Técnico"* e ferramentas corporativas.
-   - Teste 3: Peça transferência para falar com um humano, veja o direcionamento inteligente e a ativação do badge *"Escalonamento Humano"* com operador real atribuído e protocolo oficial.
-   - Mostre a aba de **Dashboard** com os indicadores em tempo real.
-5. **Encerramento e Qualidade de Código (1 min):**
-   - Exiba o terminal executando `pytest tests/test_scenarios.py -v` (10 passed) e mencione os mais de 160 casos de teste automatizados.
-   - Mostre o `docker-compose.yml` e a inicialização sincronizada com `docker compose up --build`.
