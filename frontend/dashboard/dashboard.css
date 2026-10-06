@@ -397,9 +397,11 @@ body {
 }
 
 .alert-item.injection { border-left-color: #ef4444; }
-.alert-item.sqli { border-left-color: #f59e0b; }
-.alert-item.fraud { border-left-color: #ec4899; }
-.alert-item.tenant { border-left-color: #8b5cf6; }
+.alert-item.sqli     { border-left-color: #f59e0b; }
+.alert-item.fraud    { border-left-color: #ec4899; }
+.alert-item.tenant   { border-left-color: #8b5cf6; }
+.alert-item.security { border-left-color: #10b981; }
+.alert-item.safe     { border-left-color: #334155; }
 
 .alert-top {
     display: flex;
@@ -416,9 +418,11 @@ body {
 }
 
 .alert-tag.injection { color: #f87171; }
-.alert-tag.sqli { color: #fbbf24; }
-.alert-tag.fraud { color: #f472b6; }
-.alert-tag.tenant { color: #a78bfa; }
+.alert-tag.sqli      { color: #fbbf24; }
+.alert-tag.fraud     { color: #f472b6; }
+.alert-tag.tenant    { color: #a78bfa; }
+.alert-tag.security  { color: #34d399; }
+.alert-tag.safe      { color: #475569; }
 
 .alert-time {
     font-size: 11px;
@@ -514,4 +518,65 @@ body {
 @media (max-width: 900px) {
     .kpi-grid { grid-template-columns: repeat(2, 1fr); }
     .dashboard-grid { grid-template-columns: 1fr; }
+}
+
+/* =====================================================
+   KPI Grid — variante 7 colunas
+   ===================================================== */
+.kpi-grid--7 {
+    grid-template-columns: repeat(7, 1fr);
+}
+
+@media (max-width: 1600px) {
+    .kpi-grid--7 { grid-template-columns: repeat(4, 1fr); }
+}
+
+/* =====================================================
+   Fora do Escopo — Painel e Tags
+   ===================================================== */
+.panel-card--out-of-scope {
+    border-color: rgba(100, 116, 139, 0.2);
+}
+
+.panel-card--out-of-scope:hover {
+    border-color: rgba(148, 163, 184, 0.35);
+    box-shadow: 0 8px 30px rgba(100, 116, 139, 0.12);
+}
+
+.panel-title--out-of-scope {
+    background: linear-gradient(90deg, #64748b, #94a3b8);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.alert-item.out-of-scope { border-left-color: #64748b; }
+.alert-tag.out-of-scope  { color: #94a3b8; }
+
+/* Filas de Transbordo — título */
+.panel-title--queues {
+    background: linear-gradient(90deg, #00d2ff, #7928ca);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+/* =====================================================
+   Guardrails — Estilo de título igual ao modo Dev
+   (gradiente violeta → magenta, independente do env)
+   ===================================================== */
+.panel-title--guardrail {
+    background: linear-gradient(90deg, #7928ca, #e6007e);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.panel-card--guardrail {
+    border-color: rgba(121, 40, 202, 0.25);
+}
+
+.panel-card--guardrail:hover {
+    border-color: rgba(230, 0, 126, 0.35);
+    box-shadow: 0 8px 30px rgba(121, 40, 202, 0.15);
 }

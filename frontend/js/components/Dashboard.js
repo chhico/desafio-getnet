@@ -500,7 +500,7 @@ const formatReasoningTree = (trace) => {
             }
 
             lines.push(` │   │`);
-            lines.push(` │   └── ✍️ Etapa ${subStep++}: Aplicando diretriz anti-alucinação e formatando fontes...`);
+            lines.push(` │   └── ✍️ Síntese da Resposta: Elaboração fundamentada com citação de fontes oficiais.`);
             lines.push(` │       └── Resposta elaborada com transparência e fundamentação oficial.`);
         }
     } else if (agent === "escalation") {

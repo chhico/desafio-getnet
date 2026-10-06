@@ -63,6 +63,13 @@ const fallbackDevData = {
             class: "tenant"
         }
     ],
+    out_of_scope_interceptions: 127,
+    recent_out_of_scope: [
+        { time: "12:01:33", type: "INTERCEPTAÇÃO REAL", detail: "Pergunta sobre serviços não relacionados à Getnet (solicitação de receita culinária).", agent: "guardrail_block" },
+        { time: "11:22:18", type: "INTERCEPTAÇÃO REAL", detail: "Solicitação de suporte para produto de concorrente (Stone/PagSeguro).", agent: "guardrail_block" },
+        { time: "10:15:42", type: "INTERCEPTAÇÃO REAL", detail: "Pergunta sobre previsão do tempo fora de contexto transacional.", agent: "guardrail_block" },
+        { time: "09:05:11", type: "INTERCEPTAÇÃO REAL", detail: "Conversa em idioma não suportado (mandarim) sem solicitação de produto Getnet.", agent: "guardrail_block" },
+    ],
     recent_escalations: [
         { queue: "Suporte Técnico N2 - Terminais", waiting: 10, avg_wait: "3m 15s", operator: "Carlos M. (Especialista POS)", protocol: "GET-2026-4821" },
         { queue: "Segurança e Antifraude", waiting: 1, avg_wait: "1m 45s", operator: "Beatriz R. (Antifraude)", protocol: "GET-2026-4819" },
@@ -81,7 +88,7 @@ const fallbackDevData = {
 const fallbackProdData = {
     environment: "PRODUÇÃO",
     total_conversations: "0",
-    router_accuracy: "100.0%",
+    router_accuracy: "--",
     p95_latency: "--",
     handoff_rate: "0.0%",
     security_interceptions: 0,
@@ -98,6 +105,11 @@ const fallbackProdData = {
         llm: 0,
         tools: 0
     },
+    rpm_chart: {
+        labels: ["00h", "02h", "04h", "06h", "08h", "10h", "12h", "14h", "16h", "18h", "20h", "22h", "24h"],
+        rpm: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        latency: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    },
     recent_guardrails: [
         {
             time: "--:--:--",
@@ -106,18 +118,27 @@ const fallbackProdData = {
             class: "safe"
         }
     ],
+    out_of_scope_interceptions: 0,
+    recent_out_of_scope: [],
     recent_escalations: [
-        { queue: "Fila Geral de Suporte", waiting: 0, avg_wait: "0m 00s", operator: "Equipe em prontidão", protocol: "Nenhum no momento" }
+        { queue: "Suporte Técnico N2 - Terminais", waiting: 0, avg_wait: "0m 00s", operator: "Carlos M. (Especialista POS)", protocol: "Em prontidão" },
+        { queue: "Segurança e Antifraude", waiting: 0, avg_wait: "0m 00s", operator: "Beatriz R. (Antifraude)", protocol: "Em prontidão" },
+        { queue: "Jurídico, Compliance e Regulatório", waiting: 0, avg_wait: "0m 00s", operator: "Dr. Eduardo P.", protocol: "Em prontidão" },
+        { queue: "Mesa de Grandes Contas / Key Accounts", waiting: 0, avg_wait: "0m 00s", operator: "Juliana M.", protocol: "Em prontidão" },
+        { queue: "Mesa de Negócios e Tarifas", waiting: 0, avg_wait: "0m 00s", operator: "Roberto S.", protocol: "Em prontidão" },
+        { queue: "Ouvidoria e Atendimento Geral", waiting: 0, avg_wait: "0m 00s", operator: "Mariana F.", protocol: "Em prontidão" }
     ],
     rag_stats: {
-        files_indexed: 2,
-        urls_indexed: 109,
+        files_indexed: 0,
+        urls_indexed: 0,
         status: "Online (ChromaDB Persistente)"
     }
 };
 
 // Inicialização dos Gráficos com Chart.js
 function initCharts() {
+    const isProd = currentMode === "production";
+
     // 1. Donut: Distribuição de Agentes
     const ctxDonut = document.getElementById("agentDonutChart").getContext("2d");
     agentDonutChart = new Chart(ctxDonut, {
@@ -125,8 +146,8 @@ function initCharts() {
         data: {
             labels: ["Conhecimento", "Suporte Técnico", "Escalonamento", "Guardrail (Bloqueios)"],
             datasets: [{
-                data: [58, 26, 8, 8],
-                backgroundColor: ["#00d2ff", "#7928ca", "#e6007e", "#ff3366"],
+                data: isProd ? [1, 0, 0, 0] : [58, 26, 8, 8],
+                backgroundColor: isProd ? ["#334155", "#1e293b", "#1e293b", "#1e293b"] : ["#00d2ff", "#7928ca", "#e6007e", "#ff3366"],
                 borderColor: "#0b0f19",
                 borderWidth: 3,
                 hoverOffset: 6
@@ -158,7 +179,7 @@ function initCharts() {
             labels: ["Guardrail", "Router", "LLM Synth", "Tools"],
             datasets: [{
                 label: "Latência P95 (ms)",
-                data: [40, 320, 1100, 360],
+                data: isProd ? [0, 0, 0, 0] : [40, 320, 1100, 360],
                 backgroundColor: ["#10b981", "#7928ca", "#00d2ff", "#e6007e"],
                 borderRadius: 6
             }]
@@ -190,7 +211,7 @@ function initCharts() {
     // 3. Area/Line: RPM vs Latência P95 (24h)
     const ctxArea = document.getElementById("rpmAreaChart").getContext("2d");
     const hours = ["00h", "02h", "04h", "06h", "08h", "10h", "12h", "14h", "16h", "18h", "20h", "22h", "24h"];
-    
+
     rpmAreaChart = new Chart(ctxArea, {
         type: "line",
         data: {
@@ -198,7 +219,7 @@ function initCharts() {
             datasets: [
                 {
                     label: "Requisições / Min (RPM)",
-                    data: [15, 12, 10, 24, 68, 75, 52, 60, 64, 78, 55, 42, 30],
+                    data: isProd ? [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : [15, 12, 10, 24, 68, 75, 52, 60, 64, 78, 55, 42, 30],
                     borderColor: "#00d2ff",
                     backgroundColor: "rgba(0, 210, 255, 0.12)",
                     fill: true,
@@ -207,7 +228,7 @@ function initCharts() {
                 },
                 {
                     label: "Latência P95 (s)",
-                    data: [1.6, 1.5, 1.4, 1.7, 2.1, 1.9, 1.8, 1.8, 1.9, 2.2, 1.9, 1.7, 1.6],
+                    data: isProd ? [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] : [1.6, 1.5, 1.4, 1.7, 2.1, 1.9, 1.8, 1.8, 1.9, 2.2, 1.9, 1.7, 1.6],
                     borderColor: "#e6007e",
                     borderDash: [5, 5],
                     fill: false,
@@ -256,6 +277,7 @@ function updateUI(data) {
     document.getElementById("val-p95").textContent = data.p95_latency || "--";
     document.getElementById("val-handoff").textContent = data.handoff_rate || "0.0%";
     document.getElementById("val-security").textContent = data.security_interceptions !== undefined ? data.security_interceptions : 0;
+    document.getElementById("val-out-of-scope").textContent = data.out_of_scope_interceptions !== undefined ? data.out_of_scope_interceptions : 0;
     document.getElementById("val-cost").textContent = data.total_cost || "$0.00";
 
     const isProd = currentMode === "production";
@@ -302,9 +324,9 @@ function updateUI(data) {
             rpmAreaChart.data.labels = data.rpm_chart.labels;
             rpmAreaChart.data.datasets[0].data = data.rpm_chart.rpm;
             rpmAreaChart.data.datasets[1].data = data.rpm_chart.latency;
-        } else if (isProd && data.total_conversations_raw <= 5) {
-            rpmAreaChart.data.datasets[0].data = [0, 0, 0, 0, 0, 0, 0, 0, 1, 2, data.total_conversations_raw || 1, data.total_conversations_raw || 1, data.total_conversations_raw || 1];
-            rpmAreaChart.data.datasets[1].data = [0, 0, 0, 0, 0, 0, 0, 0, 1.2, 1.5, 1.8, 1.8, 1.8];
+        } else if (isProd) {
+            rpmAreaChart.data.datasets[0].data = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+            rpmAreaChart.data.datasets[1].data = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         } else {
             rpmAreaChart.data.datasets[0].data = [15, 12, 10, 24, 68, 75, 52, 60, 64, 78, 55, 42, 30];
             rpmAreaChart.data.datasets[1].data = [1.6, 1.5, 1.4, 1.7, 2.1, 1.9, 1.8, 1.8, 1.9, 2.2, 1.9, 1.7, 1.6];
@@ -317,11 +339,14 @@ function updateUI(data) {
         const alertsList = document.getElementById("alerts-list");
         alertsList.innerHTML = "";
         data.recent_guardrails.forEach(item => {
-            const cls = (item.type || "").toLowerCase().includes("sql") ? "sqli" :
-                        (item.type || "").toLowerCase().includes("fraude") ? "fraud" :
-                        (item.type || "").toLowerCase().includes("multi-tenant") ? "tenant" :
-                        (item.type || "").toLowerCase().includes("nenhuma") ? "safe" : "injection";
-            
+            const t = (item.type || "").toLowerCase();
+            const cls = t.includes("sql") ? "sqli" :
+                t.includes("prompt") ? "injection" :
+                    t.includes("fraude") ? "fraud" :
+                        t.includes("multi-tenant") ? "tenant" :
+                            t.includes("seguran") ? "security" :
+                                t.includes("nenhuma") ? "safe" : "injection";
+
             const div = document.createElement("div");
             div.className = `alert-item ${cls}`;
             div.innerHTML = `
@@ -333,6 +358,39 @@ function updateUI(data) {
             `;
             alertsList.appendChild(div);
         });
+    }
+
+    // Atualizar Lista de Fora do Escopo
+    if (data.recent_out_of_scope !== undefined) {
+        const outList = document.getElementById("out-of-scope-list");
+        if (outList) {
+            outList.innerHTML = "";
+            if (!data.recent_out_of_scope || data.recent_out_of_scope.length === 0) {
+                const div = document.createElement("div");
+                div.className = "alert-item safe";
+                div.innerHTML = `
+                    <div class="alert-top">
+                        <span class="alert-tag safe">📋 NENHUM REGISTRO</span>
+                        <span class="alert-time">--:--:--</span>
+                    </div>
+                    <div class="alert-desc">Nenhuma mensagem fora do escopo registrada nesta instância.</div>
+                `;
+                outList.appendChild(div);
+            } else {
+                data.recent_out_of_scope.forEach(item => {
+                    const div = document.createElement("div");
+                    div.className = "alert-item out-of-scope";
+                    div.innerHTML = `
+                        <div class="alert-top">
+                            <span class="alert-tag out-of-scope">📋 ${item.type || 'FORA DO ESCOPO'}</span>
+                            <span class="alert-time">${item.time || ''}</span>
+                        </div>
+                        <div class="alert-desc">${item.detail || ''}</div>
+                    `;
+                    outList.appendChild(div);
+                });
+            }
+        }
     }
 
     // Atualizar Filas de Transbordo
@@ -354,8 +412,15 @@ function updateUI(data) {
 
     // Atualizar RAG Stats
     if (data.rag_stats) {
-        document.getElementById("rag-files-count").textContent = data.rag_stats.files_indexed || "2";
-        document.getElementById("rag-urls-count").textContent = data.rag_stats.urls_indexed || "109";
+        const filesCount = data.rag_stats.files_indexed !== undefined && data.rag_stats.files_indexed !== null
+            ? data.rag_stats.files_indexed
+            : (isProd ? 0 : 2);
+        const urlsCount = data.rag_stats.urls_indexed !== undefined && data.rag_stats.urls_indexed !== null
+            ? data.rag_stats.urls_indexed
+            : (isProd ? 0 : 109);
+
+        document.getElementById("rag-files-count").textContent = filesCount;
+        document.getElementById("rag-urls-count").textContent = urlsCount;
         document.getElementById("rag-status-text").textContent = data.rag_stats.status || "ChromaDB Online";
     }
 

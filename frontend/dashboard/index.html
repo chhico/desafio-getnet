@@ -71,17 +71,17 @@
         <span style="font-size: 11px; opacity: 0.8;" id="last-sync-time">Última atualização: agora</span>
     </div>
 
-    <!-- Top KPI Grid (6 Cards) -->
-    <section class="kpi-grid">
+    <!-- Top KPI Grid (7 Cards) -->
+    <section class="kpi-grid kpi-grid--7">
         <div class="kpi-card">
             <div class="kpi-header">
                 <span class="kpi-title">Total de Conversas</span>
                 <span class="kpi-icon-pill" style="background: rgba(0, 210, 255, 0.15); color: #00d2ff;">💬</span>
             </div>
-            <div class="kpi-value" id="val-conversations">42.8k</div>
+            <div class="kpi-value" id="val-conversations">--</div>
             <div class="kpi-trend trend-up">
-                <span>↗ +1.2%</span>
-                <span style="color: var(--text-muted); font-size: 11px;">vs período anterior</span>
+                <span id="trend-conversations">Total registrado</span>
+                <span style="color: var(--text-muted); font-size: 11px;">Instância atual</span>
             </div>
         </div>
 
@@ -90,10 +90,10 @@
                 <span class="kpi-title">Acurácia do Roteador</span>
                 <span class="kpi-icon-pill" style="background: rgba(16, 185, 129, 0.15); color: #10b981;">🎯</span>
             </div>
-            <div class="kpi-value" id="val-accuracy">98.4%</div>
+            <div class="kpi-value" id="val-accuracy">--</div>
             <div class="kpi-trend trend-up">
-                <span>↗ Estável</span>
-                <span style="color: var(--text-muted); font-size: 11px;">Meta: &ge; 98.0%</span>
+                <span>🎯 Meta: &ge; 98%</span>
+                <span style="color: var(--text-muted); font-size: 11px;">Roteamento</span>
             </div>
         </div>
 
@@ -102,10 +102,10 @@
                 <span class="kpi-title">Latência P95</span>
                 <span class="kpi-icon-pill" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b;">⚡</span>
             </div>
-            <div class="kpi-value" id="val-p95">1.82s</div>
+            <div class="kpi-value" id="val-p95">--</div>
             <div class="kpi-trend trend-up">
-                <span>⚡ Abaixo da Meta</span>
-                <span style="color: var(--text-muted); font-size: 11px;">Meta: &lt; 2.50s</span>
+                <span>⚡ Meta: &lt; 2.50s</span>
+                <span style="color: var(--text-muted); font-size: 11px;">Latência</span>
             </div>
         </div>
 
@@ -114,10 +114,10 @@
                 <span class="kpi-title">Taxa de Handoff Humano</span>
                 <span class="kpi-icon-pill" style="background: rgba(230, 0, 126, 0.15); color: #e6007e;">🤝</span>
             </div>
-            <div class="kpi-value" id="val-handoff">8.2%</div>
+            <div class="kpi-value" id="val-handoff">--</div>
             <div class="kpi-trend trend-down">
-                <span>↘ -0.5%</span>
-                <span style="color: var(--text-muted); font-size: 11px;">Meta: &le; 12.0%</span>
+                <span>🤝 Meta: &le; 12%</span>
+                <span style="color: var(--text-muted); font-size: 11px;">Transbordo</span>
             </div>
         </div>
 
@@ -126,7 +126,7 @@
                 <span class="kpi-title">Ataques Interceptados</span>
                 <span class="kpi-icon-pill" style="background: rgba(239, 68, 68, 0.15); color: #ef4444;">🛡️</span>
             </div>
-            <div class="kpi-value" id="val-security" style="color: #f87171;">412</div>
+            <div class="kpi-value" id="val-security" style="color: #f87171;">0</div>
             <div class="kpi-trend trend-up">
                 <span style="color: #34d399;">✓ 100% Bloqueados</span>
                 <span style="color: var(--text-muted); font-size: 11px;">Zero Vazamentos</span>
@@ -135,20 +135,32 @@
 
         <div class="kpi-card">
             <div class="kpi-header">
+                <span class="kpi-title">Fora do Escopo</span>
+                <span class="kpi-icon-pill" style="background: rgba(100, 116, 139, 0.15); color: #94a3b8;">📋</span>
+            </div>
+            <div class="kpi-value" id="val-out-of-scope" style="color: #94a3b8;">0</div>
+            <div class="kpi-trend">
+                <span style="color: #64748b;">↪ Redirecionado</span>
+                <span style="color: var(--text-muted); font-size: 11px;">Fora do contexto Getnet</span>
+            </div>
+        </div>
+
+        <div class="kpi-card">
+            <div class="kpi-header">
                 <span class="kpi-title">Custo Consolidado (FinOps)</span>
                 <span class="kpi-icon-pill" style="background: rgba(121, 40, 202, 0.15); color: #c084fc;">💰</span>
             </div>
-            <div class="kpi-value" id="val-cost">$38.45</div>
+            <div class="kpi-value" id="val-cost">$0.00</div>
             <div class="kpi-trend trend-up">
-                <span>↗ +5.3%</span>
-                <span style="color: var(--text-muted); font-size: 11px;">OpenAI gpt-4o-mini</span>
+                <span>💰 OpenAI API</span>
+                <span style="color: var(--text-muted); font-size: 11px;">Custo acumulado</span>
             </div>
         </div>
     </section>
 
     <!-- Main Grid: 3 Columns -->
     <main class="dashboard-grid">
-        <!-- Coluna Esquerda: Dinâmica dos Agentes & Latência Nó a Nó -->
+        <!-- Coluna Esquerda: Distribuição de Agentes + Latência por Nó + RAG -->
         <section>
             <!-- Donut Agentes -->
             <div class="panel-card">
@@ -175,9 +187,33 @@
                     <canvas id="nodeLatencyChart"></canvas>
                 </div>
             </div>
+
+            <!-- RAG & VectorStore — abaixo da Latência, mesma largura da coluna -->
+            <div class="panel-card">
+                <div class="panel-header">
+                    <div>
+                        <div class="panel-title">Status da Base RAG &amp; Deduplicação</div>
+                        <div class="panel-sub">ChromaDB Persistente com Hashes SQLite MD5</div>
+                    </div>
+                </div>
+                <div class="rag-stats-row">
+                    <div class="rag-stat-box">
+                        <div class="rag-stat-val" id="rag-files-count">--</div>
+                        <div class="rag-stat-lbl">Documentos Locais (.pdf, .txt)</div>
+                    </div>
+                    <div class="rag-stat-box">
+                        <div class="rag-stat-val" id="rag-urls-count">--</div>
+                        <div class="rag-stat-lbl">Páginas Web Crawled Getnet</div>
+                    </div>
+                    <div class="rag-stat-box">
+                        <div class="rag-stat-val" id="rag-status-text" style="color: #34d399; font-size: 15px; font-weight: 600;">Online</div>
+                        <div class="rag-stat-lbl">ChromaDB + Hash Sync</div>
+                    </div>
+                </div>
+            </div>
         </section>
 
-        <!-- Coluna Central: Tráfego Temporal & RAG Infra -->
+        <!-- Coluna Central: Tráfego Temporal + Filas de Transbordo -->
         <section>
             <!-- RPM vs Latência -->
             <div class="panel-card">
@@ -195,38 +231,38 @@
                 </div>
             </div>
 
-            <!-- RAG & VectorStore Box -->
+            <!-- Filas de Transbordo Humano — mesma largura do gráfico acima -->
             <div class="panel-card">
                 <div class="panel-header">
                     <div>
-                        <div class="panel-title">Status da Base RAG & Deduplicação</div>
-                        <div class="panel-sub">ChromaDB Persistente com Hashes SQLite MD5</div>
+                        <div class="panel-title panel-title--queues">Filas de Transbordo Humano</div>
+                        <div class="panel-sub">6 Filas Especializadas Getnet Ativas</div>
                     </div>
                 </div>
-                <div class="rag-stats-row">
-                    <div class="rag-stat-box">
-                        <div class="rag-stat-val" id="rag-files-count">4</div>
-                        <div class="rag-stat-lbl">Documentos Locais (.pdf, .txt)</div>
-                    </div>
-                    <div class="rag-stat-box">
-                        <div class="rag-stat-val" id="rag-urls-count">14</div>
-                        <div class="rag-stat-lbl">Páginas Web Crawled Getnet</div>
-                    </div>
-                    <div class="rag-stat-box">
-                        <div class="rag-stat-val" id="rag-status-text" style="color: #34d399; font-size: 15px; font-weight: 600;">Online</div>
-                        <div class="rag-stat-lbl">ChromaDB + Hash Sync</div>
-                    </div>
-                </div>
+                <table class="queue-table">
+                    <thead>
+                        <tr>
+                            <th>Fila</th>
+                            <th>Na Fila</th>
+                            <th>Espera Média</th>
+                            <th>Operador</th>
+                            <th>Último Protocolo</th>
+                        </tr>
+                    </thead>
+                    <tbody id="queue-tbody">
+                        <!-- Gerado dinamicamente via dashboard.js -->
+                    </tbody>
+                </table>
             </div>
         </section>
 
-        <!-- Coluna Direita: Segurança & Filas de Escalonamento -->
+        <!-- Coluna Direita: Guardrails + Fora do Escopo -->
         <section>
             <!-- Guardrail Threat Feed -->
-            <div class="panel-card">
+            <div class="panel-card panel-card--guardrail">
                 <div class="panel-header">
                     <div>
-                        <div class="panel-title">Alertas de Guardrails em Tempo Real</div>
+                        <div class="panel-title panel-title--guardrail">Alertas de Guardrails em Tempo Real</div>
                         <div class="panel-sub">Interceptações automáticas antes do LLM</div>
                     </div>
                     <span style="font-size: 10px; color: #ef4444; font-weight: 700; background: rgba(239, 68, 68, 0.15); padding: 3px 8px; border-radius: 8px;">
@@ -238,28 +274,20 @@
                 </div>
             </div>
 
-            <!-- Live Escalation Queues -->
-            <div class="panel-card">
+            <!-- Fora do Escopo Feed -->
+            <div class="panel-card panel-card--out-of-scope">
                 <div class="panel-header">
                     <div>
-                        <div class="panel-title">Filas de Transbordo Humano</div>
-                        <div class="panel-sub">6 Filas Especializadas Getnet Ativas</div>
+                        <div class="panel-title panel-title--out-of-scope">Mensagens Fora do Escopo</div>
+                        <div class="panel-sub">Solicitações fora do contexto Getnet</div>
                     </div>
+                    <span style="font-size: 10px; color: #94a3b8; font-weight: 700; background: rgba(100, 116, 139, 0.15); padding: 3px 8px; border-radius: 8px;">
+                        LIVE FEED
+                    </span>
                 </div>
-                <table class="queue-table">
-                    <thead>
-                        <tr>
-                            <th>Fila</th>
-                            <th>Fila</th>
-                            <th>Espera</th>
-                            <th>Operador</th>
-                            <th>Protocolo</th>
-                        </tr>
-                    </thead>
-                    <tbody id="queue-tbody">
-                        <!-- Gerado dinamicamente via dashboard.js -->
-                    </tbody>
-                </table>
+                <div class="alerts-list" id="out-of-scope-list">
+                    <!-- Gerado dinamicamente via dashboard.js -->
+                </div>
             </div>
         </section>
     </main>
