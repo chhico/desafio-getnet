@@ -7,6 +7,8 @@ Ferramentas unificadas do Agente 2 (Knowledge Agent):
 3. pesquisar_web: Busca na internet via DuckDuckGo para perguntas de uso geral (tempo, cotações, mercado)
 """
 
+import os
+import re
 from langchain_core.tools import tool
 from backend.agents.tools.rag_tools import _get_vectorstore
 
