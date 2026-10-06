@@ -10,46 +10,23 @@ O sistema adota um padrão de orquestração avançado com **Guardrails de Segur
 
 ```mermaid
 flowchart TD
-    User([Usuário / Cliente]) -->|POST /api/v1/chat| API[FastAPI Router<br/>backend/api/conversations.py]
-    API --> Service[ConversationService<br/>backend/services/conversation_service.py]
-    Service --> Graph[LangGraph StateGraph<br/>backend/agents/graph.py]
-    
-    Graph --> Guardrail[Guardrails de Segurança<br/>guardrail_node]
-    Guardrail -->|Violação / Prompt Injection / SQLi| Block[Resposta de Bloqueio Seguro]
-    Block --> END([Fim da Execução])
-    
-    Guardrail -->|Aprovado / Entrada Segura| Router[Agente 1: Roteador Inteligente<br/>orchestrator_node]
-    
-    Router -->|Tier 1 Fast-Path: Saudações / FAQ| FastPath[Fast-Path Determinístico<br/>Resposta em < 15ms sem LLM]
-    FastPath --> Knowledge
-    
-    Router -->|Dúvidas de catálogo, taxas, Pix,<br/>regras e busca web externa| Knowledge[Agente 2: Conhecimento<br/>knowledge_node]
-    Router -->|Extratos, vendas, status de POS,<br/>erros de recusa e chamados técnicos| Support[Agente 3: Suporte ao Cliente<br/>support_node]
-    Router -->|Transferência para atendente humano,<br/>insistência, casos críticos e ouvidoria| Escalation[Agente 4: Escalonamento Humano<br/>escalation_node]
-    
-    subgraph Ferramentas Knowledge
-        Knowledge --> RAGLocal[consultar_base_local_getnet<br/>ChromaDB Local]
-        Knowledge --> RAGWeb[consultar_base_web_getnet<br/>Varredura Web Portais Getnet]
-        Knowledge --> WebSearch[pesquisar_web<br/>DuckDuckGo Search]
-    end
-    
-    subgraph Ferramentas Support
-        Support --> ToolVendas[consultar_vendas_e_liquidacao]
-        Support --> ToolPOS[consultar_status_maquininhas]
-        Support --> ToolErros[consultar_transacoes_e_erros]
-        Support --> ToolChamados[consultar_chamados_suporte]
-        Support --> ToolAbrir[abrir_chamado_suporte]
-    end
-    
-    subgraph Ferramentas Escalation
-        Escalation --> ToolHandoff[transferir_atendimento_humano]
-    end
-    
-    Knowledge --> Response([Resposta Unificada ao Cliente])
-    Support --> Response
-    Escalation --> Response
-    Response --> Telemetry[Telemetria & Observabilidade Harness<br/>telemetry_collector]
-    Telemetry --> END
+    User(["Usuário (API / Web)"]) --> Start(["START (Grafo)"])
+    Start --> Guardrail["GUARDRAIL DE ENTRADA<br/>(guardrail_node)"]
+
+    Guardrail -->|Inseguro / Malicioso| Telemetria
+    Guardrail -->|Seguro| Router["Agente 1: ROTEADOR<br/>(orchestrator_node)"]
+
+    Router -->|Tier 1 Fast-Path| FastPath["FAST-PATH DETERMINÍSTICO<br/>───────────────<br/>• Saudações / FAQ<br/>• Resposta em &lt; 15ms<br/>• Sem LLM"]
+    Router -->|Conhecimento| Knowledge["Agente 2: CONHECIMENTO<br/>───────────────<br/>• consultar_base_local<br/> (RAG ChromaDB: PDFs + URLs)<br/>• consultar_base_web<br/> (Varredura ao vivo)<br/>• pesquisar_web (DDGS)"]
+    Router -->|Suporte| Support["Agente 3: SUPORTE<br/>───────────────<br/>• consultar_vendas_liq<br/>• consultar_maquininhas<br/>• consultar_transacoes<br/>• abrir_chamado_suporte<br/>• Auth & Isolamento ID"]
+    Router -->|Escalonamento| Escalation["Agente 4: ESCALONAMENTO<br/>───────────────<br/>• transferir_atendimento_humano"]
+
+    FastPath --> Telemetria
+    Knowledge --> Telemetria
+    Support --> Telemetria
+    Escalation --> Telemetria
+
+    Telemetria["Telemetria & Observabilidade Harness"] --> EndNode(["END (Grafo)"])
 ```
 
 ---
@@ -69,9 +46,14 @@ flowchart TD
 
 ### 📚 3. Agente de Conhecimento (`knowledge_node`)
 - **Papel:** Responde dúvidas institucionais, catálogo de maquininhas, taxas, crediário, Pix, antecipação e perguntas gerais de mundo aberto com arquitetura *Cache-First e Live Web Fallback*.
-- **Citação Obrigatória de Fontes:** Toda resposta fundamentada em documentação oficial cita explicitamente arquivos ou URLs consultadas no rodapé.
+- **Arquitetura Cache-First com Short-Circuit:**
+  - Opera com despacho sequencial determinístico (`parallel_tool_calls=False`).
+  - Executa prioritariamente `consultar_base_local_getnet` (RAG vetorial no ChromaDB persistente).
+  - Se a base local contiver os dados necessários com alto grau de confiança (ex: comparativos entre Get Clássica e Get Smart, taxas, prazos, especificações técnicas), o agente **encerra a busca imediatamente (Short-Circuit / Cache-Hit)** e sintetiza a resposta final, poupando chamadas web redundantes e reduzindo drasticamente a latência da requisição.
+  - Apenas se a base local for insuficiente ou o tema exigir atualização externa ao vivo, aciona sequencialmente `consultar_base_web_getnet` (varredura nos portais Getnet) ou `pesquisar_web` (DuckDuckGo para câmbio, clima, etc.).
+- **Citação Obrigatória de Fontes:** Toda resposta fundamentada em documentação oficial cita explicitamente arquivos ou URLs consultadas no rodapé (`📌 Fontes consultadas:`).
 - **Ferramentas (`KNOWLEDGE_TOOLS`):**
-  1. `consultar_base_local_getnet`: RAG vetorial no ChromaDB persistente com dados de documentos oficiais locais e URLs sincronizadas via crawler.
+  1. `consultar_base_local_getnet`: RAG vetorial no ChromaDB persistente com dados de documentos oficiais locais (`fonte_de_dados/`) e páginas web sincronizadas.
   2. `consultar_base_web_getnet`: Varredura em tempo real nas páginas e subpáginas dos portais oficiais Getnet (`RAG_SYNC_URLS`) quando a base interna local necessitar de atualização complementar.
   3. `pesquisar_web`: Busca na internet (DuckDuckGo) para cotações de moedas (ex: euro hoje), clima em tempo real e informações gerais fora do catálogo Getnet.
 
@@ -186,8 +168,22 @@ O frontend foi desenvolvido com foco em alta produtividade, estética limpa e **
   - Renderiza **negrito**, *itálico*, `código inline`, citações (`> blockquote`), listas com marcadores, cabeçalhos hierárquicos e o bloco destacado de *"📌 Fontes consultadas"* sem vulnerabilidades XSS.
 - **Badges Semânticos dos Agentes:**
   - Identificação visual imediata de qual agente especialista respondeu cada turno (`Conhecimento`, `Suporte ao Cliente`, `Escalonamento Humano`, `Segurança & Políticas`), além de pílulas indicando as ferramentas corporativas acionadas.
-- **Dashboard Integrado de Telemetria:**
-  - Visualização de métricas e status em tempo real com dados da telemetria da API (`/dashboard/`).
+- **Dashboard Integrado de Telemetria & Observabilidade Operacional (`/dashboard/`):**
+  - **Controle Dual-Mode de Ambiente:**
+    - 🟢 **Modo Produção (100% Real SQLite):** Conectado diretamente à telemetria real (`bds/telemetry.sqlite`) e RAG (`bds/rag_sync.sqlite`). Se não houver chamados escalonados ou bloqueios, exibe com fidelidade `0` ou `Sem registros`, sem mascarar o estado real da operação nem gerar dados fictícios.
+    - 🟣 **Modo Desenvolvimento (Baseline Simulado Ilustrativo):** Preenche os quadros e gráficos com métricas ilustrativas calibradas para demonstração visual, layout e validação de interfaces.
+  - **Quadro "Status da Base RAG & Deduplicação":**
+    - Exibe a proveniência e integridade dos dados diretamente de `bds/rag_sync.sqlite`:
+      - *Arquivos Locais Processados:* Tabela `simple_sync_hashes` (assinaturas MD5 dos documentos da pasta `fonte_de_dados/` com sincronização incremental).
+      - *Páginas Web Rastreadas:* Tabela `url_sync_hashes` (URLs oficiais Getnet indexadas e sincronizadas via crawler assíncrono).
+  - **Quadro "Filas de Transbordo Humano":**
+    - Contabiliza os atendimentos transferidos por fila corporativa Getnet, filtrando estritamente transferências confirmadas com número de protocolo gerado (`protocol IS NOT NULL`), distribuídas entre as 6 filas oficiais.
+  - **Cards Comparativos de Segurança:**
+    - *Alertas de Guardrails:* Bloqueios determinísticos de injeção de prompt, jailbreak, SQLi, tentativa de extração de system prompt e ameaças.
+    - *Mensagens Fora do Escopo:* Registro de interações que não são ameaças, mas fogem do domínio do negócio de adquirência Getnet.
+  - **Métricas de Performance e Tráfego:**
+    - Distribuição percentual de requisições por agente e latência P95 por nó do LangGraph.
+    - Gráfico dinâmico de Requisições / Minuto vs Latência P95.
 
 ---
 
@@ -263,20 +259,35 @@ python backend/cli.py
 O sistema possui uma suíte de testes de nível industrial com `pytest`, organizada em uma **Arquitetura Sequencial de 4 Camadas**:
 
 ```bash
+# Ativação do ambiente virtual (se necessário):
+# .\.venv\Scripts\activate   # Windows
+# source .venv/bin/activate  # Linux/Mac
+
+# Execução recomendada via módulo python (garante PYTHONPATH configurado):
+
 # Camada 1: Cenários Oficiais e Bônus do Edital (27 casos)
-pytest tests/test_01_edital_scenarios.py -v
+python -m pytest tests/test_01_edital_scenarios.py -v
 
 # Camada 2: Especialistas do Grafo (17 casos)
-pytest tests/test_02_agents.py -v
+python -m pytest tests/test_02_agents.py -v
 
 # Camada 3: Ferramentas Internas e Crawler (61 casos)
-pytest tests/test_03_tools_and_internal.py -v
+python -m pytest tests/test_03_tools_and_internal.py -v
 
-# Camada 4: Robustez Conversacional Profunda Multi-turnos (50 casos)
-pytest tests/test_04_multiturn_harness.py -v
+# Camada 4: Robustez Conversacional Profunda Multi-turnos (50 casos / 210 turnos)
+python -m pytest tests/test_04_multiturn_harness.py -v
+# ou execução direta com gravação de dossiê executivo em Markdown e JSON:
+python tests/test_04_multiturn_harness.py
 
 # Bateria Completa (> 155 testes)
-pytest -v
+python -m pytest -v
+
+# Testando um Agente/Especialista específico (filtro por nome com -k):
+python -m pytest tests/test_02_agents.py -k "TestKnowledgeAgent" -v
+python -m pytest tests/test_02_agents.py -k "TestSupportAgent" -v
+python -m pytest tests/test_02_agents.py -k "TestEscalationAgent" -v
+python -m pytest tests/test_02_agents.py -k "TestGuardrailAgent" -v
+python -m pytest tests/test_02_agents.py -k "TestOrchestratorAgent" -v
 ```
 
 ### Cobertura das Suítes de Teste:
