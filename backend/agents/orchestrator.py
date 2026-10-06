@@ -269,7 +269,6 @@ def orchestrator_node(state: SupportState) -> dict:
     if next_agent == "guardrail_block":
         cat_lower = (category or "").lower()
         reason_lower = (reason or "").lower()
-        msg_lower = (last_message or "").lower()
 
         is_out_of_scope = (
             "fora de escopo" in cat_lower
@@ -290,6 +289,7 @@ def orchestrator_node(state: SupportState) -> dict:
                 ),
                 name="guardrail_block",
             )
+            result["guardrail_reason"] = f"Fora de escopo: {reason or category}"
         else:
             msg_bloqueio = AIMessage(
                 content=(
@@ -302,9 +302,12 @@ def orchestrator_node(state: SupportState) -> dict:
                 ),
                 name="guardrail_block",
             )
+            result["guardrail_reason"] = f"Violação semântica: {reason or category}"
+        result["is_safe"] = False
         result["messages"] = [msg_bloqueio]
 
     return result
+
 
 
 def route_after_orchestrator(state: SupportState) -> str:

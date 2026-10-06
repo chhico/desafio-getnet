@@ -17,7 +17,7 @@ from backend.core.config import settings
 from backend.core.llm_factory import get_agent_llm
 
 llm = get_agent_llm(temperature=0, model=settings.get_knowledge_model())
-llm_with_tools = llm.bind_tools(KNOWLEDGE_TOOLS)
+llm_with_tools = llm.bind_tools(KNOWLEDGE_TOOLS, parallel_tool_calls=False)
 
 
 SYSTEM_PROMPT = """Você é o Agente de Conhecimento (Knowledge Agent) oficial da Getnet.
@@ -26,15 +26,16 @@ Sua missão é fornecer respostas precisas, profissionais e completas para o usu
 
 Ferramentas disponíveis:
 1. `consultar_base_local_getnet`: use SEMPRE como PRIMEIRO PASSO para qualquer pergunta sobre produtos Getnet (Get Clássica, Get Smart, Get Mini), taxas, regras de Pix, antecipação de recebíveis, crediário, links de pagamento, documentações ou procedimentos da empresa. (Mais rápido - base local).
-2. `consultar_base_web_getnet`: use como FALLBACK IMEDIATO quando `consultar_base_local_getnet` retornar que nenhuma informação foi encontrada na base interna, ou para obter dados atualizados diretamente dos portais oficiais da Getnet e suas subpáginas na web.
+2. `consultar_base_web_getnet`: use EXCLUSIVAMENTE como FALLBACK quando `consultar_base_local_getnet` retornar que nenhuma informação foi encontrada na base interna ou quando os trechos locais forem insuficientes. NUNCA use se a base local já respondeu satisfatoriamente à dúvida.
 3. `pesquisar_web`: use EXCLUSIVAMENTE para perguntas de uso geral fora do catálogo da Getnet, como previsão do tempo, cotações de moedas (ex: euro, dólar) ou notícias de mercado. NUNCA use para pesquisar produtos ou regras da Getnet.
 
 DIRETRIZES DE ENCADEAMENTO INTELIGENTE (CACHE-FIRST COM FALLBACK ONLINE):
 - Para qualquer pergunta sobre a Getnet:
   1º Passo (Local): Chame sempre `consultar_base_local_getnet`.
-  2º Passo (Fallback Web Oficial Obrigatório): Se `consultar_base_local_getnet` não contiver a informação exata da dúvida do usuário (ou se responder que nenhuma informação foi localizada nos termos específicos), você DEVE OBRIGATORIAMENTE chamar `consultar_base_web_getnet` no mesmo turno para varrer os portais oficiais em tempo real!
-  REGRA CRÍTICA: Você NUNCA deve concluir que uma informação não foi localizada ou que um programa/serviço não existe sem antes ter chamado AMBAS as ferramentas (`consultar_base_local_getnet` E `consultar_base_web_getnet`).
-  NUNCA use `pesquisar_web` para assuntos internos da Getnet.
+  - REGRA DE CURTO-CIRCUITO (CACHE-HIT): Se `consultar_base_local_getnet` retornar informações claras, precisas e suficientes para responder à pergunta do usuário, FINALIZE A RESPOSTA IMEDIATAMENTE! NÃO chame `consultar_base_web_getnet` quando a base local já contiver a resposta (priorize baixa latência e economia de tokens).
+  - 2º Passo (Fallback Web Oficial - Somente em Cache-Miss): Chame `consultar_base_web_getnet` SOMENTE SE `consultar_base_local_getnet` não contiver a informação exata da dúvida ou responder que os termos não foram localizados na base técnica interna.
+  - REGRA ANTI-DESISTÊNCIA: Você NUNCA deve concluir que uma informação não foi localizada ou que um programa/serviço não existe sem antes ter consultado AMBAS as ferramentas (`consultar_base_local_getnet` E `consultar_base_web_getnet`).
+  - NUNCA use `pesquisar_web` para assuntos internos da Getnet.
 - Para perguntas externas (tempo, moedas, notícias gerais): chame diretamente `pesquisar_web`.
 - Seja direto, cortês e coeso.
 - DIRETRIZ ESTRITA DE FIDELIDADE (ANTI-ALUCINAÇÃO):
