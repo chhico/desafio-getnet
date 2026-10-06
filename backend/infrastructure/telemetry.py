@@ -32,7 +32,9 @@ class TelemetryCollector:
             "guardrail_block": 0,
         }
         self.live_latencies: List[float] = []
-        self.live_guardrails: List[Dict[str, Any]] = []
+        self.live_guardrails: List[Dict[str, Any]] = []       # Ataques reais (sql, prompt, fraude, tenant, segurança)
+        self.live_out_of_scope: List[Dict[str, Any]] = []     # Fora do escopo (INTERCEPTAÇÃO REAL)
+        self.live_out_of_scope_count: int = 0
         self.live_escalations: List[Dict[str, Any]] = []
         self.live_total_cost: float = 0.0
         self.live_correct_routes: int = 0
@@ -194,32 +196,78 @@ class TelemetryCollector:
                     SELECT strftime('%H:%M:%S', timestamp), guardrail_reason, category, message_text
                     FROM chat_telemetry
                     WHERE is_safe = 0
-                    ORDER BY id DESC LIMIT 10
+                    ORDER BY id DESC LIMIT 20
                 """)
                 self.live_guardrails = []
+                self.live_out_of_scope = []
+                self.live_out_of_scope_count = 0
                 for row in cursor.fetchall():
-                    self.live_guardrails.append({
+                    reason = (row[1] or "").lower()
+                    detail = row[1] or f"Bloqueio preventivo na categoria {row[2]}"
+                    if "sql" in reason or "drop" in reason or "select" in reason or "union" in reason:
+                        tipo = "SQL INJECTION"
+                    elif "prompt" in reason or "inject" in reason or "jailbreak" in reason or "instru" in reason:
+                        tipo = "PROMPT INJECTION"
+                    elif "fraude" in reason or "ilíc" in reason or "clonar" in reason or "contratual" in reason:
+                        tipo = "TENTATIVA DE FRAUDE"
+                    elif "cpf" in reason or "multi-tenant" in reason or "lgpd" in reason or "terceiro" in reason:
+                        tipo = "VIOLAÇÃO MULTI-TENANT"
+                    elif "seguran" in reason or "guardrail" in reason or "bloqueio" in reason:
+                        tipo = "BLOQUEIO DE SEGURANÇA"
+                    else:
+                        tipo = "INTERCEPTAÇÃO REAL"
+                    entry = {
                         "time": row[0] or datetime.now().strftime("%H:%M:%S"),
-                        "type": "BLOQUEIO PREVENTIVO",
-                        "detail": row[1] or f"Bloqueio na categoria {row[2]}",
+                        "type": tipo,
+                        "detail": detail,
                         "agent": "guardrail_block"
-                    })
+                    }
+                    if tipo == "INTERCEPTAÇÃO REAL":
+                        self.live_out_of_scope.append(entry)
+                        self.live_out_of_scope_count += 1
+                    else:
+                        self.live_guardrails.append(entry)
 
-                # 7. Escalonamentos reais recentes
+                # 7. Escalonamentos reais — apenas handoffs consumados (com protocolo gerado)
                 cursor.execute("""
                     SELECT strftime('%H:%M:%S', timestamp), category, protocol
                     FROM chat_telemetry
                     WHERE agent_used = 'escalation'
+                      AND protocol IS NOT NULL
+                      AND protocol != ''
                     ORDER BY id DESC LIMIT 10
                 """)
+                _QUEUE_MAP = {
+                    "terminal":    "Suporte Técnico N2 - Terminais",
+                    "pos":         "Suporte Técnico N2 - Terminais",
+                    "maquininha":  "Suporte Técnico N2 - Terminais",
+                    "fraude":      "Segurança e Antifraude",
+                    "antifraude":  "Segurança e Antifraude",
+                    "seguran":     "Segurança e Antifraude",
+                    "jurídic":    "Jurídico, Compliance e Regulatório",
+                    "juridic":     "Jurídico, Compliance e Regulatório",
+                    "compliance":  "Jurídico, Compliance e Regulatório",
+                    "grande conta": "Mesa de Grandes Contas / Key Accounts",
+                    "key account": "Mesa de Grandes Contas / Key Accounts",
+                    "negócio":    "Mesa de Negócios e Tarifas",
+                    "negocio":     "Mesa de Negócios e Tarifas",
+                    "tarifa":      "Mesa de Negócios e Tarifas",
+                    "ouvidoria":   "Ouvidoria e Atendimento Geral",
+                }
                 self.live_escalations = []
                 for row in cursor.fetchall():
+                    cat_raw = str(row[1] or "")
+                    cat_lower = cat_raw.lower()
+                    fila = next(
+                        (v for k, v in _QUEUE_MAP.items() if k in cat_lower),
+                        "Ouvidoria e Atendimento Geral"   # fallback seguro
+                    )
                     self.live_escalations.append({
-                        "queue": row[1] if "Fila" in str(row[1]) else f"Fila Especializada ({row[1]})",
+                        "queue": fila,
                         "waiting": 1,
-                        "avg_wait": "1m 15s",
-                        "operator": "Atendente Humano Alocado",
-                        "protocol": row[2] or f"GET-2026-{int(time.time()) % 10000:04d}"
+                        "avg_wait": "< 5m",
+                        "operator": "Especialista Getnet",
+                        "protocol": row[2]
                     })
 
         except Exception as e:
@@ -249,7 +297,37 @@ class TelemetryCollector:
         elif not is_safe:
             canonical_agent = "guardrail_block"
 
-        # Se custo não veio calculado, estima com base nos tokens ou caracteres
+        # ---------------------------------------------------------------
+        # Normalização canônica: "Fora de Escopo" via orchestrator LLM
+        # O guardrail determinístico (Python regex) já define is_safe=False.
+        # O orchestrator semântico roteia next_agent="guardrail_block" para
+        # mensagens off-topic MAS não define is_safe=False — ficaria is_safe=1
+        # no banco, tornando esses registros invisíveis para o dashboard.
+        # Aqui normalizamos ANTES do INSERT, sem alterar schema.
+        # ---------------------------------------------------------------
+        if canonical_agent == "guardrail_block" and is_safe:
+            cat_l = (category or "").lower()
+            rsn_l = (guardrail_reason or "").lower()
+            is_out_of_scope = (
+                "escopo" in cat_l
+                or "fora do escopo" in rsn_l
+                or "fora de escopo" in rsn_l
+                or "não relacionad" in rsn_l
+                or "nao relacionad" in rsn_l
+                or "não é relacionad" in rsn_l
+            )
+            if is_out_of_scope:
+                is_safe = False
+                category = "Fora de Escopo"
+                guardrail_reason = (
+                    guardrail_reason
+                    or "Solicitação fora do escopo de atendimento Getnet."
+                )
+                logger.info(
+                    f"📋 Normalização Fora de Escopo aplicada | "
+                    f"category original: '{cat_l}' | reason: '{rsn_l[:80]}'"
+                )
+
         if cost_usd <= 0.0:
             if prompt_tokens > 0 or completion_tokens > 0:
                 cost_usd = round((prompt_tokens * 0.00000015) + (completion_tokens * 0.00000060), 6)
@@ -304,22 +382,64 @@ class TelemetryCollector:
 
         now_str = datetime.now().strftime("%H:%M:%S")
         if canonical_agent == "guardrail_block":
-            self.live_guardrails.insert(0, {
+            reason = (guardrail_reason or "").lower()
+            if "sql" in reason or "drop" in reason or "select" in reason or "union" in reason:
+                tipo = "SQL INJECTION"
+            elif "prompt" in reason or "inject" in reason or "jailbreak" in reason or "instru" in reason:
+                tipo = "PROMPT INJECTION"
+            elif "fraude" in reason or "ilíc" in reason or "clonar" in reason or "contratual" in reason:
+                tipo = "TENTATIVA DE FRAUDE"
+            elif "cpf" in reason or "multi-tenant" in reason or "lgpd" in reason or "terceiro" in reason:
+                tipo = "VIOLAÇÃO MULTI-TENANT"
+            elif "seguran" in reason or "guardrail" in reason or "bloqueio" in reason:
+                tipo = "BLOQUEIO DE SEGURANÇA"
+            else:
+                tipo = "INTERCEPTAÇÃO REAL"
+            entry = {
                 "time": now_str,
-                "type": "INTERCEPTAÇÃO REAL",
+                "type": tipo,
                 "detail": guardrail_reason or f"Bloqueio preventivo na categoria {category}",
                 "agent": "guardrail_block"
-            })
-            if len(self.live_guardrails) > 20:
-                self.live_guardrails.pop()
+            }
+            if tipo == "INTERCEPTAÇÃO REAL":
+                self.live_out_of_scope.insert(0, entry)
+                self.live_out_of_scope_count += 1
+                if len(self.live_out_of_scope) > 20:
+                    self.live_out_of_scope.pop()
+            else:
+                self.live_guardrails.insert(0, entry)
+                if len(self.live_guardrails) > 20:
+                    self.live_guardrails.pop()
 
-        if canonical_agent == "escalation":
+        _QUEUE_MAP = {
+            "terminal":     "Suporte Técnico N2 - Terminais",
+            "pos":          "Suporte Técnico N2 - Terminais",
+            "maquininha":   "Suporte Técnico N2 - Terminais",
+            "fraude":       "Segurança e Antifraude",
+            "antifraude":   "Segurança e Antifraude",
+            "seguran":      "Segurança e Antifraude",
+            "jurídic":     "Jurídico, Compliance e Regulatório",
+            "juridic":      "Jurídico, Compliance e Regulatório",
+            "compliance":   "Jurídico, Compliance e Regulatório",
+            "grande conta": "Mesa de Grandes Contas / Key Accounts",
+            "key account":  "Mesa de Grandes Contas / Key Accounts",
+            "negócio":     "Mesa de Negócios e Tarifas",
+            "negocio":      "Mesa de Negócios e Tarifas",
+            "tarifa":       "Mesa de Negócios e Tarifas",
+            "ouvidoria":    "Ouvidoria e Atendimento Geral",
+        }
+        if canonical_agent == "escalation" and protocol:
+            cat_lower = (category or "").lower()
+            fila = next(
+                (v for k, v in _QUEUE_MAP.items() if k in cat_lower),
+                "Ouvidoria e Atendimento Geral"   # fallback seguro
+            )
             self.live_escalations.insert(0, {
-                "queue": category if "Fila" in category else f"Fila Especializada ({category})",
+                "queue": fila,
                 "waiting": 1,
-                "avg_wait": "1m 15s",
-                "operator": "Atendente Humano Alocado",
-                "protocol": protocol or f"GET-2026-{int(time.time()) % 10000:04d}"
+                "avg_wait": "< 5m",
+                "operator": "Especialista Getnet",
+                "protocol": protocol
             })
             if len(self.live_escalations) > 20:
                 self.live_escalations.pop()
@@ -366,7 +486,7 @@ class TelemetryCollector:
         for h in hours_labels:
             count = rpm_map.get(h, 0)
             avg_lats = lat_map.get(h, [])
-            lat = round(sum(avg_lats) / len(avg_lats), 2) if avg_lats else (1.4 if h == current_bucket else 0.0)
+            lat = round(sum(avg_lats) / len(avg_lats), 2) if avg_lats else 0.0
             rpm_series.append(count)
             lat_series.append(lat)
 
@@ -376,18 +496,22 @@ class TelemetryCollector:
             "latency": lat_series
         }
 
-    def _get_rag_db_counts(self):
-        rag_files_count = 2
-        rag_urls_count = 109
+    def _get_rag_db_counts(self, is_prod: bool = True):
+        if not is_prod:
+            return 2, 109
+        rag_files_count = 0
+        rag_urls_count = 0
         db_path = Path("bds/rag_sync.sqlite")
         if db_path.exists():
             try:
                 conn = sqlite3.connect(db_path)
                 cursor = conn.cursor()
                 cursor.execute("SELECT COUNT(*) FROM simple_sync_hashes")
-                rag_files_count = cursor.fetchone()[0]
+                row_f = cursor.fetchone()
+                rag_files_count = row_f[0] if row_f and row_f[0] is not None else 0
                 cursor.execute("SELECT COUNT(*) FROM url_sync_hashes")
-                rag_urls_count = cursor.fetchone()[0]
+                row_u = cursor.fetchone()
+                rag_urls_count = row_u[0] if row_u and row_u[0] is not None else 0
                 conn.close()
             except Exception:
                 pass
@@ -395,7 +519,7 @@ class TelemetryCollector:
 
     def get_stats(self, mode: str = "production") -> Dict[str, Any]:
         is_prod = (mode.lower() in ["production", "producao", "produção", "prod"])
-        rag_files_count, rag_urls_count = self._get_rag_db_counts()
+        rag_files_count, rag_urls_count = self._get_rag_db_counts(is_prod=is_prod)
         uptime_h = round((time.time() - self.start_time) / 3600, 1)
 
         rpm_chart_data = self._get_24h_chart_data(is_prod=is_prod)
@@ -444,13 +568,12 @@ class TelemetryCollector:
 
             # Filas de escalonamento reais
             recent_escalations = self.live_escalations if self.live_escalations else [
-                {
-                    "queue": "Fila Geral de Suporte",
-                    "waiting": 0,
-                    "avg_wait": "0m 00s",
-                    "operator": "Equipe em prontidão",
-                    "protocol": "Nenhum no momento"
-                }
+                {"queue": "Suporte Técnico N2 - Terminais",        "waiting": 0, "avg_wait": "0m 00s", "operator": "Carlos M. (Especialista POS)",  "protocol": "Em prontidão"},
+                {"queue": "Segurança e Antifraude",                "waiting": 0, "avg_wait": "0m 00s", "operator": "Beatriz R. (Antifraude)",       "protocol": "Em prontidão"},
+                {"queue": "Jurídico, Compliance e Regulatório",    "waiting": 0, "avg_wait": "0m 00s", "operator": "Dr. Eduardo P.",                "protocol": "Em prontidão"},
+                {"queue": "Mesa de Grandes Contas / Key Accounts", "waiting": 0, "avg_wait": "0m 00s", "operator": "Juliana M.",                    "protocol": "Em prontidão"},
+                {"queue": "Mesa de Negócios e Tarifas",            "waiting": 0, "avg_wait": "0m 00s", "operator": "Roberto S.",                    "protocol": "Em prontidão"},
+                {"queue": "Ouvidoria e Atendimento Geral",         "waiting": 0, "avg_wait": "0m 00s", "operator": "Mariana F.",                    "protocol": "Em prontidão"},
             ]
 
             return {
@@ -462,7 +585,8 @@ class TelemetryCollector:
                 "p95_latency": f"{p95:.2f}s" if p95 > 0 else "--",
                 "p50_latency": f"{p50:.2f}s" if p50 > 0 else "--",
                 "handoff_rate": f"{handoff_rate}%" if total > 0 else "0.0%",
-                "security_interceptions": g_cnt,
+                "security_interceptions": len(self.live_guardrails),
+                "out_of_scope_interceptions": self.live_out_of_scope_count,
                 "total_cost": f"${self.live_total_cost:.4f}",
                 "agent_distribution": {
                     "knowledge": k_pct,
@@ -478,6 +602,7 @@ class TelemetryCollector:
                 },
                 "rpm_chart": rpm_chart_data,
                 "recent_guardrails": recent_guardrails,
+                "recent_out_of_scope": self.live_out_of_scope[:6],
                 "recent_escalations": recent_escalations,
                 "rag_stats": {
                     "files_indexed": rag_files_count,
@@ -535,6 +660,12 @@ class TelemetryCollector:
                 },
                 "rpm_chart": rpm_chart_data,
                 "recent_guardrails": combined_guardrails[:6],
+                "recent_out_of_scope": [
+                    {"time": "10:15:42", "type": "INTERCEPTAÇÃO REAL", "detail": "Pergunta sobre serviços não relacionados à Getnet (solicitação de receita culinária).", "agent": "guardrail_block"},
+                    {"time": "09:48:11", "type": "INTERCEPTAÇÃO REAL", "detail": "Solicitação de suporte para produto de concorrente (Stone/PagSeguro).", "agent": "guardrail_block"},
+                    {"time": "08:32:05", "type": "INTERCEPTAÇÃO REAL", "detail": "Pergunta sobre previsão do tempo fora de contexto transacional.", "agent": "guardrail_block"},
+                ],
+                "out_of_scope_interceptions": 3 + self.live_out_of_scope_count,
                 "recent_escalations": combined_escalations[:6],
                 "rag_stats": {
                     "files_indexed": rag_files_count,
