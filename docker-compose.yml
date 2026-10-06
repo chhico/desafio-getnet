@@ -28,8 +28,13 @@ services:
       - RAG_WEB_SYNC_CRON=${RAG_WEB_SYNC_CRON:-0 3 * * *}
       - LANGCHAIN_TRACING_V2=${LANGCHAIN_TRACING_V2:-false}
       - LANGSMITH_TRACING=${LANGSMITH_TRACING:-false}
-      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY:-}
+      - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
+      - LANGCHAIN_ENDPOINT=${LANGCHAIN_ENDPOINT:-https://api.smith.langchain.com}
+      - LANGCHAIN_API_KEY=${LANGCHAIN_API_KEY:-${LANGSMITH_API_KEY:-}}
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY:-${LANGCHAIN_API_KEY:-}}
       - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-desafio-get}
+      - LANGCHAIN_PROJECT=${LANGCHAIN_PROJECT:-desafio-get}
+      - BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS:-["*"]}
     volumes:
       - ./bds:/app/bds
       - ./fonte_de_dados:/app/fonte_de_dados
